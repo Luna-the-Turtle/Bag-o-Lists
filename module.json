@@ -1,0 +1,23 @@
+{
+  "id": "bag-of-lists",
+  "title": "Bag of Lists",
+  "description": "A Foundry VTT module for tracking multiple customizable lists (factions, resources, etc.) with per-page data and player/GM views.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.348"
+  },
+  "authors": [{ "name": "Luna-the-Turtle" }],
+  "esmodules": ["scripts/main.js"],
+  "styles": ["styles/module.css"],
+  "license": "MIT",
+  "readme": "README.md",
+  "socket": true,
+  "dependencies": [
+    {
+      "name": "socketlib",
+      "manifest": "https://github.com/manuelVo/socketlib/releases/latest/download/module.json",
+      "type": "module"
+    }
+  ]
+}
