@@ -13,6 +13,7 @@
   "license": "MIT",
   "readme": "README.md",
   "socket": true,
+  "url": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.0.0/bag-o-lists.zip",
   "dependencies": [
     {
       "name": "socketlib",
