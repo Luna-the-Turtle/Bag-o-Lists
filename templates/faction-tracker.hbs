@@ -24,6 +24,7 @@
       <table class="fr-table">
         <thead>
           <tr>
+            <th class="col-drag-handle">⋮⋮</th>
             <th class="col-faction">Faction</th>
             {{#each players}}
               <th class="col-player">
@@ -38,6 +39,11 @@
         <tbody>
           {{#each factions}}
             <tr>
+              <td class="col-drag-handle">
+                <div class="fr-drag-handle" title="Drag to reorder">
+                  ⋮⋮
+                </div>
+              </td>
               <td class="col-faction">
                 <span class="fr-faction">
                   <img class="fr-img" src="{{img}}" data-fid="{{id}}" title="Change image" />

@@ -20,15 +20,55 @@ Hooks.once('socketlib.ready', () => {
   const socket = socketlib.registerModule('bag-of-lists');
   // Register the real update function for live sync
   socket.register('updateState', (newState) => {
+    // Only update the shared data, preserve each user's active page
+    const currentActivePageId = window._fr_temp_state?.activePageId;
     window._fr_temp_state = foundry.utils.duplicate(newState);
+    
+    // Restore user's active page if it exists and is valid
+    if (currentActivePageId && newState.pages?.some(p => p.id === currentActivePageId)) {
+      window._fr_temp_state.activePageId = currentActivePageId;
+    }
+    
     if (game.factionTracker?.rendered) {
       game.factionTracker.render(true);
     }
   });
+  
+  // Register handler for player value changes (GM only)
+  socket.register('playerValueChange', async (data) => {
+    if (!game.user.isGM) return; // Only GM can save
+    
+    const { factionId, userId, newValue } = data;
+    const state = getState();
+    const page = state.pages.find(p => p.id === state.activePageId);
+    
+    if (page) {
+      page.userRelations ||= {};
+      page.userRelations[userId] ||= {};
+      page.userRelations[userId][factionId] = newValue;
+      
+      await saveState(state);
+      
+      // Broadcast the updated state to everyone (without activePageId)
+      const latestState = getState();
+      window.broadcastStateToPlayers(latestState);
+    }
+  });
+  
   // Store socket reference for use in GM emit
   game.bagOfListsSocket = socket;
+  
+  // Helper function to broadcast state without activePageId (so players keep their own page)
+  window.broadcastStateToPlayers = (state) => {
+    if (game.user.isGM && game.bagOfListsSocket) {
+      const stateCopy = foundry.utils.duplicate(state);
+      // Remove activePageId so players keep their current page
+      delete stateCopy.activePageId;
+      game.bagOfListsSocket.executeForEveryone('updateState', stateCopy);
+    }
+  };
 });
-// Restore settings-based sync logic for player updates
+
 Hooks.on('updateSetting', (setting, value) => {
   if (setting === 'bag-of-lists.state') {
     window._fr_temp_state = foundry.utils.duplicate(value);
@@ -82,16 +122,19 @@ function getState() {
 }
 
 async function saveState(state) {
-  // Save to settings as before
   await game.settings.set(MODULE_ID, "state", state);
-  // If GM, broadcast new state to all clients using socketlib
+  // If GM, broadcast new state to all clients using socketlib (without activePageId)
   if (game.user?.isGM && game.bagOfListsSocket) {
-    game.bagOfListsSocket.executeForEveryone('updateState', state);
+    window.broadcastStateToPlayers(state);
   }
 }
 
 /** ------- Faction Tracker App (ApplicationV2) ------- **/
 class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor(options = {}) {
+    super(options);
+    this._isDragging = false; // Track dragging state to prevent renders
+  }
   /** Inject custom SVG icon into header after render */
   injectHeaderIcon() {
     setTimeout(() => {
@@ -146,6 +189,46 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     }
   };
 
+  /** Override render to prevent renders during drag operations and preserve scroll position */
+  async render(force = false, options = {}) {
+    if (this._isDragging && !force) {
+      return this; // Block renders during drag operations
+    }
+    
+    // Preserve scroll position during re-renders (but not during close)
+    const isClosing = options.close || this._state === Application.RENDER_STATES.CLOSING;
+    let preservedScrollTop = 0;
+    
+    if (!isClosing && this.rendered) {
+      const scrollContainer = this.element?.querySelector('.fr-table-container') || this.element?.querySelector('.fr-grid-container');
+      preservedScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+    }
+    
+    const result = await super.render(force, options);
+    
+    // Restore scroll position
+    if (preservedScrollTop > 0 && !isClosing && this.element) {
+      const newScrollContainer = this.element.querySelector('.fr-table-container') || this.element.querySelector('.fr-grid-container');
+      if (newScrollContainer) {
+        newScrollContainer.scrollTop = preservedScrollTop;
+      }
+    }
+    
+    return result;
+  }
+
+  /** Override close to ensure drag state is cleaned up */
+  async close(options = {}) {
+    // Reset drag state to prevent render blocking during close
+    this._isDragging = false;
+    
+    // Clean up any stray drag elements
+    const dragElements = document.querySelectorAll('.fr-drag-ghost, .fr-drop-placeholder, .fr-drag-hidden');
+    dragElements.forEach(el => el.remove());
+    
+    return await super.close(options);
+  }
+
   /** Build the template context. */
   async _prepareContext(options) {
     const isGM = !!game.user.isGM;
@@ -176,6 +259,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         const value = (activePage.userRelations?.[p.id]?.[f.id]) ?? 0;
         const clamped = Math.max(-50, Math.min(50, Number(value) || 0));
         const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
+        
         return {
           userId: p.id,
           value: clamped,
@@ -261,6 +345,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
   _onRender(context, options) {
     const html = this.element;
     const $html = $(html);
+    
     // Player: Up/down arrow handlers for playerControlled items
     $html.find('.fr-arrow-up').on('click', async (ev) => {
       const fid = ev.currentTarget.dataset.fid;
@@ -276,10 +361,23 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       let v = Number(page.userRelations[me.id][fid]) || 0;
       v = Math.min(50, v + 1);
       page.userRelations[me.id][fid] = v;
-      // Sync to GM via socketlib
-      if (game.bagOfListsSocket) {
-        game.bagOfListsSocket.executeForEveryone('updateState', state);
+      
+      // Save state to settings (if GM) or sync to GM
+      if (game.user.isGM) {
+        await saveState(state);
+        // Broadcast to players (without activePageId)
+        window.broadcastStateToPlayers(state);
+      } else {
+        // Sync to GM via socketlib - GM will save it
+        if (game.bagOfListsSocket) {
+          game.bagOfListsSocket.executeAsGM('playerValueChange', {
+            factionId: fid,
+            userId: me.id,
+            newValue: v
+          });
+        }
       }
+      
       window._fr_temp_state = state;
       this.render(true);
     });
@@ -298,10 +396,23 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       let v = Number(page.userRelations[me.id][fid]) || 0;
       v = Math.max(-50, v - 1);
       page.userRelations[me.id][fid] = v;
-      // Sync to GM via socketlib
-      if (game.bagOfListsSocket) {
-        game.bagOfListsSocket.executeForEveryone('updateState', state);
+      
+      // Save state to settings (if GM) or sync to GM
+      if (game.user.isGM) {
+        await saveState(state);
+        // Broadcast to players (without activePageId)
+        window.broadcastStateToPlayers(state);
+      } else {
+        // Sync to GM via socketlib - GM will save it
+        if (game.bagOfListsSocket) {
+          game.bagOfListsSocket.executeAsGM('playerValueChange', {
+            factionId: fid,
+            userId: me.id,
+            newValue: v
+          });
+        }
       }
+      
       window._fr_temp_state = state;
       this.render(true);
     });
@@ -316,6 +427,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         if (faction) {
           faction.playerControlled = checked;
           await saveState(state);
+          
           // Fetch latest state and use for next render
           const latestState = getState();
           window._fr_temp_state = latestState;
@@ -323,7 +435,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         }
       }
     });
-    console.log('[FactionTracker] _onRender called', { context, options });
+    
     // Detach previous event handlers before re-attaching
     $html.off('keydown', '.fr-val');
     $html.off('keydown', '#fr-new-name');
@@ -440,7 +552,6 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       }
     });
 
-    // Add new page
     $html.find('#fr-add-page').on('click', async () => {
       const state = getState();
       const newPage = {
@@ -536,7 +647,6 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       }
     });
 
-    // Add new faction to active page
     const addItem = async () => {
       const nameInput = $html.find('#fr-new-name')[0];
       const name = nameInput?.value?.trim();
@@ -632,6 +742,372 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         this.render(true);
       }
     });
+
+    // Initialize drag and drop functionality
+    this._initializeDragAndDrop($html);
+  }
+
+  /** 
+   * Initialize drag and drop functionality for both table rows and cards
+   */
+  _initializeDragAndDrop($html) {
+    // Only allow drag and drop for GM (tables) and players with player-controlled factions (cards)
+    const isGM = !!game.user.isGM;
+    
+    // Get draggable elements based on view
+    const draggableSelector = isGM ? '.fr-drag-handle' : '.fr-card';
+    const $draggables = $html.find(draggableSelector);
+
+    if ($draggables.length === 0) {
+      return; // No draggable elements found
+    }
+
+    console.log(`[FactionTracker] Drag and drop initialized: ${$draggables.length} draggable elements`);
+
+    // Clean up any existing drag event handlers to prevent accumulation
+    $draggables.off('mousedown.drag-reorder');
+    
+    let draggedElement = null;
+    let draggedIndex = null;
+    let draggedData = null;
+    let ghostElement = null;
+    let placeholder = null;
+    let dropZone = null;
+
+    // Helper function to create ghost element
+    const createGhostElement = (originalElement) => {
+      if (isGM) {
+        // For GM view, create a simplified version of the table row
+        const tableRow = originalElement.closest('tr');
+        const factionName = tableRow.querySelector('.fr-name')?.textContent || 'Faction';
+        const factionImg = tableRow.querySelector('.fr-img')?.src || 'icons/svg/shield.svg';
+        
+        // Create a simplified ghost that looks like a faction item
+        const ghost = document.createElement('div');
+        ghost.classList.add('fr-drag-ghost', 'fr-ghost-table-row');
+        ghost.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #23232b; border: 2px solid #b48e5a; border-radius: 6px; min-width: 200px;">
+            <img src="${factionImg}" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;" />
+            <span style="color: #fff; font-weight: 600;">${factionName}</span>
+          </div>
+        `;
+        
+        document.body.appendChild(ghost);
+        return ghost;
+      } else {
+        // For player view, clone the card but make it smaller
+        const ghost = originalElement.cloneNode(true);
+        ghost.classList.add('fr-drag-ghost', 'fr-ghost-card');
+        ghost.style.transform = 'scale(0.9)';
+        ghost.style.maxWidth = '200px';
+        
+        document.body.appendChild(ghost);
+        return ghost;
+      }
+    };
+
+    // Helper function to create placeholder
+    const createPlaceholder = () => {
+      const placeholder = document.createElement('div');
+      placeholder.classList.add('fr-drop-placeholder');
+      
+      if (isGM) {
+        placeholder.classList.add('fr-placeholder-table-row');
+        placeholder.innerHTML = '<div style="text-align: center;">Drop here</div>';
+        // For table, we need to create a full table row
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 999; // Span all columns
+        td.appendChild(placeholder);
+        tr.appendChild(td);
+        return tr;
+      } else {
+        placeholder.classList.add('fr-placeholder-card');
+        placeholder.innerHTML = '<div>Drop here</div>';
+        return placeholder;
+      }
+    };
+
+    // Helper function to get faction data from element
+    const getFactionDataFromElement = (element) => {
+      if (isGM) {
+        // For drag handles, get the table row and find faction ID from any input in the row
+        const tableRow = element.closest('tr');
+        const factionInput = tableRow ? tableRow.querySelector('[data-fid]') : null;
+        return factionInput ? factionInput.dataset.fid : null;
+      } else {
+        // For cards, get faction ID from arrow buttons or other elements
+        const factionElement = element.querySelector('[data-fid]');
+        return factionElement ? factionElement.dataset.fid : null;
+      }
+    };
+
+    // Helper function to get drop index from mouse position
+    const getDropIndex = (clientY) => {
+      if (!dropZone) return 0;
+      
+      const container = dropZone;
+      // Get all visible elements (excluding placeholder and hidden dragged element)
+      const elements = Array.from(container.children).filter(el => 
+        !el.classList.contains('fr-drop-placeholder') && 
+        !el.classList.contains('fr-drag-hidden') &&
+        el.style.display !== 'none'
+      );
+
+      // If no elements, return 0
+      if (elements.length === 0) return 0;
+
+      for (let i = 0; i < elements.length; i++) {
+        const rect = elements[i].getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+        
+        // If mouse is above the midpoint of this element, insert before it
+        if (clientY < midpoint) {
+          return i;
+        }
+      }
+      
+      // If we're past all elements, insert at the end
+      return elements.length;
+    };
+
+    // Helper function to update placeholder position
+    let currentPlaceholderIndex = -1;
+    const updatePlaceholderPosition = (clientY) => {
+      if (!placeholder || !dropZone || !this._isDragging) return;
+
+      try {
+        const newIndex = getDropIndex(clientY);
+        
+        // Only update if index actually changed
+        if (newIndex === currentPlaceholderIndex) return;
+        
+        const container = dropZone;
+        
+        // Check if container still exists and is valid
+        if (!container || !container.parentNode) return;
+        
+        // Get all visible elements (excluding placeholder and hidden dragged element)
+        const elements = Array.from(container.children).filter(el => 
+          !el.classList.contains('fr-drop-placeholder') &&
+          !el.classList.contains('fr-drag-hidden') &&
+          el.style.display !== 'none'
+        );
+        
+        // Remove existing placeholder safely
+        if (placeholder.parentNode === container) {
+          container.removeChild(placeholder);
+        }
+
+        // Insert placeholder at new position
+        if (newIndex >= elements.length) {
+          // Insert at the end
+          container.appendChild(placeholder);
+        } else {
+          // Insert before the element at newIndex
+          const targetElement = elements[newIndex];
+          if (targetElement && targetElement.parentNode === container) {
+            container.insertBefore(placeholder, targetElement);
+          } else {
+            // Fallback: append at end if target element is invalid
+            container.appendChild(placeholder);
+          }
+        }
+        
+        currentPlaceholderIndex = newIndex;
+        
+      } catch (error) {
+        console.warn('[FactionTracker] Error updating placeholder position:', error);
+      }
+    };
+
+    // Mouse move handler with throttling
+    let lastMoveTime = 0;
+    const handleMouseMove = (e) => {
+      if (!ghostElement || !draggedElement || !this._isDragging) return;
+      
+      // Throttle mouse move events to improve performance
+      const now = Date.now();
+      if (now - lastMoveTime < 16) return; // ~60fps
+      lastMoveTime = now;
+      
+      // Update ghost position
+      ghostElement.style.left = e.clientX - 100 + 'px';
+      ghostElement.style.top = e.clientY - 30 + 'px';
+      
+      // Update placeholder position
+      updatePlaceholderPosition(e.clientY);
+    };
+
+    // Mouse up handler  
+    const handleMouseUp = (e) => {
+      if (!draggedElement || !placeholder || !this._isDragging) return;
+      
+      // Calculate final drop index
+      const finalIndex = getDropIndex(e.clientY);
+      
+      // Clean up UI elements
+      if (ghostElement && ghostElement.parentNode) {
+        ghostElement.parentNode.removeChild(ghostElement);
+        ghostElement = null;
+      }
+      
+      if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.removeChild(placeholder);
+        placeholder = null;
+      }
+      
+      if (dropZone) {
+        dropZone.classList.remove('fr-drop-zone');
+        dropZone = null;
+      }
+      
+      // Restore text selection
+      document.body.style.userSelect = '';
+      
+      // Remove global event listeners
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      // Reset dragging flag and placeholder index
+      this._isDragging = false;
+      currentPlaceholderIndex = -1;
+      
+      // Only proceed with reordering if position changed
+      if (finalIndex !== draggedIndex && draggedData) {
+        // Trigger reorder function (element will be shown after re-render)
+        this._reorderFactions(draggedData, draggedIndex, finalIndex);
+      } else {
+        // No reorder needed, show original element immediately
+        if (draggedElement) {
+          draggedElement.classList.remove('fr-drag-hidden');
+        }
+      }
+      
+      // Reset drag state
+      draggedElement = null;
+      draggedIndex = null;
+      draggedData = null;
+    };
+
+    // Add drag event listeners to each draggable element using namespaced events for clean removal
+    $draggables.on('mousedown.drag-reorder', (e) => {
+      const element = e.currentTarget;
+      
+      // For GM view, prevent dragging if not clicking on drag handle
+      if (isGM && !e.target.closest('.fr-drag-handle')) {
+        return;
+      }
+      
+      // For player view, prevent dragging if clicking on interactive elements
+      if (!isGM && e.target.matches('input, button, .fr-del, .fr-img, .fr-checkbox')) {
+        return;
+      }
+
+      // Prevent multiple drags
+      if (this._isDragging) return;
+
+        e.preventDefault();
+        
+        this._isDragging = true;
+        
+        // For GM view, get the table row; for player view, use the card directly
+        draggedElement = isGM ? element.closest('tr') : element;
+        draggedIndex = Array.from(draggedElement.parentNode.children).indexOf(draggedElement);
+        draggedData = getFactionDataFromElement(element);
+        
+        // Validate we have required data
+        if (!draggedData) {
+          this._isDragging = false;
+          return;
+        }
+        
+        ghostElement = createGhostElement(element);
+        
+        placeholder = createPlaceholder();
+        
+        dropZone = isGM ? $html.find('.fr-table tbody')[0] : $html.find('.fr-grid')[0];
+        if (dropZone) {
+          dropZone.classList.add('fr-drop-zone');
+        }
+        
+        // Hide original element (use draggedElement, not element)
+        draggedElement.classList.add('fr-drag-hidden');
+        
+        // Position ghost at cursor
+        const rect = element.getBoundingClientRect();
+        ghostElement.style.left = e.clientX - rect.width / 2 + 'px';
+        ghostElement.style.top = e.clientY - rect.height / 2 + 'px';
+        
+        // Insert initial placeholder using current mouse position
+        currentPlaceholderIndex = -1;
+        updatePlaceholderPosition(e.clientY);
+        
+        // Add global mouse event listeners
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        // Prevent text selection
+        document.body.style.userSelect = 'none';
+    });
+  }
+
+  /**
+   * Reorder factions in the data and persist changes
+   */
+  async _reorderFactions(factionId, oldIndex, newIndex) {
+    // Only allow GM to reorder factions
+    if (!game.user.isGM) {
+      console.warn('[FactionTracker] Only GM can reorder factions');
+      return;
+    }
+    
+    try {
+      const state = getState();
+      const page = state.pages.find(p => p.id === state.activePageId);
+      
+      if (!page || !page.factions) {
+        console.warn('[FactionTracker] No active page or factions found for reordering');
+        return;
+      }
+
+      // Find the faction being moved
+      const factionIndex = page.factions.findIndex(f => f.id === factionId);
+      if (factionIndex === -1) {
+        console.warn('[FactionTracker] Faction not found for reordering:', factionId);
+        return;
+      }
+
+      // Remove faction from old position
+      const [faction] = page.factions.splice(factionIndex, 1);
+      
+      // Insert at new position (adjust for removal)
+      let insertIndex = newIndex;
+      if (factionIndex < newIndex) {
+        insertIndex = newIndex - 1;
+      }
+      
+      page.factions.splice(insertIndex, 0, faction);
+      
+      // Save state and sync
+      await saveState(state);
+      
+      // Update temp state and re-render (scroll position preserved by render override)
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      this.render(true);
+      
+      log('info', 'Faction reordered successfully', { 
+        factionId, 
+        factionName: faction.name,
+        oldIndex: factionIndex, 
+        newIndex: insertIndex 
+      });
+      
+    } catch (error) {
+      logError('Failed to reorder factions', error);
+      ui.notifications?.error('Failed to reorder factions. Please try again.');
+    }
   }
 }
 

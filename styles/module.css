@@ -93,6 +93,7 @@
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  flex-shrink: 0; /* Don't shrink the tabs */
 }
 .fr-tab {
   padding: 6px 16px;
@@ -111,22 +112,27 @@
 /* styles/module.css */
 .faction-tracker { padding: 8px; }
 
-/* Constrain the application window height */
-#faction-tracker-app {
-  max-height: 800px !important;
-}
-
-#faction-tracker-app .window-content {
-  max-height: 750px !important;
+/* Content area constraints (not window constraints) */
+.faction-tracker {
+  height: 100%; /* Fill available window content area */
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.fr-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.fr-toolbar { 
+  display: flex; 
+  gap: 8px; 
+  align-items: center; 
+  margin-bottom: 8px;
+  flex-shrink: 0; /* Don't shrink the toolbar */
+}
 .fr-toolbar input { flex: 1; }
 
 /* Scrollable table container for GM view */
 .fr-table-container {
-  max-height: 500px;
+  flex: 1; /* Take up all remaining space */
+  min-height: 200px; /* Ensure minimum usable height */
   overflow-y: auto;
   overflow-x: hidden;
   border: 1px solid var(--color-border-muted, #ccc);
@@ -168,6 +174,39 @@
 
 .col-faction { width: 280px; text-align: left; }
 .col-player { text-align: center; }
+.col-drag-handle { 
+  width: 40px; 
+  text-align: center; 
+  border-right: 2px solid #b48e5a;
+  background: rgba(180, 142, 90, 0.1);
+  padding: 0;
+}
+
+/* Drag handle styling */
+.fr-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 50px;
+  cursor: grab;
+  color: #b48e5a;
+  font-weight: bold;
+  font-size: 16px;
+  line-height: 0.8;
+  transition: background-color 0.2s ease;
+  padding: 8px;
+}
+
+.fr-drag-handle:hover {
+  background-color: rgba(180, 142, 90, 0.2);
+  color: #c49a66;
+}
+
+.fr-drag-handle:active {
+  cursor: grabbing;
+  background-color: rgba(180, 142, 90, 0.3);
+}
 
 .fr-faction { display: flex; align-items: center; gap: 8px; }
 .fr-img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; cursor: pointer; }
@@ -201,7 +240,8 @@
 
 /* Player card view - scrollable container */
 .fr-grid-container {
-  max-height: 500px;
+  flex: 1; /* Take up all remaining space */
+  min-height: 200px; /* Ensure minimum usable height */
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 8px; /* Add space for scrollbar */
@@ -339,4 +379,82 @@
   width: 2px;
   background: #888;
   z-index: 3;
+}
+
+/* Drag and Drop Styles */
+
+/* Make table rows and cards draggable */
+.fr-table tbody tr,
+.fr-card {
+  transition: all 0.2s ease;
+}
+
+.fr-card:hover {
+  background-color: rgba(180, 142, 90, 0.1);
+  cursor: grab;
+}
+
+/* Ghost element that follows cursor */
+.fr-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.9;
+  transform: rotate(1deg);
+  transition: none;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+.fr-drag-ghost.fr-ghost-card {
+  border: 2px solid #b48e5a;
+  border-radius: 10px;
+}
+
+/* Drop placeholder */
+.fr-drop-placeholder {
+  background: rgba(180, 142, 90, 0.3);
+  border: 2px dashed #b48e5a;
+  border-radius: 6px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b48e5a;
+  font-weight: bold;
+  animation: pulse 1.5s infinite;
+}
+
+.fr-drop-placeholder.fr-placeholder-table-row {
+  height: 60px;
+  margin: 2px 0;
+}
+
+.fr-drop-placeholder.fr-placeholder-card {
+  min-width: 220px;
+  min-height: 220px;
+  max-width: 260px;
+  flex: 1 1 220px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Hide original element during drag */
+.fr-table tbody tr.fr-drag-hidden {
+  display: none;
+}
+
+.fr-card.fr-drag-hidden {
+  display: none;
+}
+
+/* Drop zones */
+.fr-table tbody.fr-drop-zone {
+  position: relative;
+}
+
+.fr-grid.fr-drop-zone {
+  position: relative;
 }
