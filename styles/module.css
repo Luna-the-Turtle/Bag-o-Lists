@@ -111,8 +111,48 @@
 /* styles/module.css */
 .faction-tracker { padding: 8px; }
 
+/* Constrain the application window height */
+#faction-tracker-app {
+  max-height: 800px !important;
+}
+
+#faction-tracker-app .window-content {
+  max-height: 750px !important;
+  overflow: hidden;
+}
+
 .fr-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .fr-toolbar input { flex: 1; }
+
+/* Scrollable table container for GM view */
+.fr-table-container {
+  max-height: 500px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--color-border-muted, #ccc);
+  border-radius: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #b48e5a #23232b;
+}
+
+/* Webkit scrollbar styling for table container */
+.fr-table-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.fr-table-container::-webkit-scrollbar-track {
+  background: #23232b;
+  border-radius: 4px;
+}
+
+.fr-table-container::-webkit-scrollbar-thumb {
+  background: #b48e5a;
+  border-radius: 4px;
+}
+
+.fr-table-container::-webkit-scrollbar-thumb:hover {
+  background: #c49a66;
+}
 
 .fr-table { width: 100%; border-collapse: collapse; }
 .fr-table th, .fr-table td { padding: 6px; border-bottom: 1px solid var(--color-border-muted, #ccc); vertical-align: middle; }
@@ -159,7 +199,35 @@
   background: rgba(200, 0, 0, 0.6); /* left of zero */
 }
 
-/* Player card view */
+/* Player card view - scrollable container */
+.fr-grid-container {
+  max-height: 500px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px; /* Add space for scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: #b48e5a #23232b;
+}
+
+/* Webkit scrollbar styling for grid container */
+.fr-grid-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.fr-grid-container::-webkit-scrollbar-track {
+  background: #23232b;
+  border-radius: 4px;
+}
+
+.fr-grid-container::-webkit-scrollbar-thumb {
+  background: #b48e5a;
+  border-radius: 4px;
+}
+
+.fr-grid-container::-webkit-scrollbar-thumb:hover {
+  background: #c49a66;
+}
+
 .fr-grid {
   display: flex;
   flex-wrap: wrap;

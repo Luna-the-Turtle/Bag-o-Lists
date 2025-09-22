@@ -20,78 +20,82 @@
   <button id="fr-add" type="button">Create a Bag!</button>
   <button id="fr-del-page" title="Delete Page">🗑️</button>
     </div>
-    <table class="fr-table">
-      <thead>
-        <tr>
-          <th class="col-faction">Faction</th>
-          {{#each players}}
-            <th class="col-player">
-              {{name}}
-              {{#if ../isGM}}
-                <button class="fr-del-tab" data-pageid="{{../activePageId}}" data-uid="{{id}}" title="Delete Tab for Player" style="margin-left:4px;">🗑️</button>
-              {{/if}}
-            </th>
-          {{/each}}
-        </tr>
-      </thead>
-      <tbody>
-        {{#each factions}}
+    <div class="fr-table-container">
+      <table class="fr-table">
+        <thead>
           <tr>
-            <td class="col-faction">
-              <span class="fr-faction">
-                <img class="fr-img" src="{{img}}" data-fid="{{id}}" title="Change image" />
-                <span class="fr-name">{{name}}</span>
-                <span class="fr-del" data-fid="{{id}}" title="Delete">🗑️</span>
-                <span class="fr-checkbox-label" title="Keep visible at zero?">
-                  <input type="checkbox" class="fr-persist fr-checkbox" data-fid="{{id}}" {{#if persistOnZero}}checked{{/if}} />
-                  Persist @ 0
-                </span>
-                <span class="fr-checkbox-label" title="Allow player to control value">
-                  <input type="checkbox" class="fr-player-control fr-checkbox" data-fid="{{id}}" {{#if playerControlled}}checked{{/if}} />
-                  Player Controlled
-                </span>
-              </span>
-            </td>
-            {{#each cells}}
-              <td class="fr-cell">
-                <input class="fr-val" type="number" min="-50" max="50" value="{{value}}" data-fid="{{../id}}" data-uid="{{userId}}" />
-                <div class="fr-meter">
-                  <span class="neg" style="width: {{negWidth}}%;"></span>
-                  <span class="zero"></span>
-                  <span class="pos" style="width: {{posWidth}}%;"></span>
-                </div>
-              </td>
+            <th class="col-faction">Faction</th>
+            {{#each players}}
+              <th class="col-player">
+                {{name}}
+                {{#if ../isGM}}
+                  <button class="fr-del-tab" data-pageid="{{../activePageId}}" data-uid="{{id}}" title="Delete Tab for Player" style="margin-left:4px;">🗑️</button>
+                {{/if}}
+              </th>
             {{/each}}
           </tr>
-        {{/each}}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {{#each factions}}
+            <tr>
+              <td class="col-faction">
+                <span class="fr-faction">
+                  <img class="fr-img" src="{{img}}" data-fid="{{id}}" title="Change image" />
+                  <span class="fr-name">{{name}}</span>
+                  <span class="fr-del" data-fid="{{id}}" title="Delete">🗑️</span>
+                  <span class="fr-checkbox-label" title="Keep visible at zero?">
+                    <input type="checkbox" class="fr-persist fr-checkbox" data-fid="{{id}}" {{#if persistOnZero}}checked{{/if}} />
+                    Persist @ 0
+                  </span>
+                  <span class="fr-checkbox-label" title="Allow player to control value">
+                    <input type="checkbox" class="fr-player-control fr-checkbox" data-fid="{{id}}" {{#if playerControlled}}checked{{/if}} />
+                    Player Controlled
+                  </span>
+                </span>
+              </td>
+              {{#each cells}}
+                <td class="fr-cell">
+                  <input class="fr-val" type="number" min="-50" max="50" value="{{value}}" data-fid="{{../id}}" data-uid="{{userId}}" />
+                  <div class="fr-meter">
+                    <span class="neg" style="width: {{negWidth}}%;"></span>
+                    <span class="zero"></span>
+                    <span class="pos" style="width: {{posWidth}}%;"></span>
+                  </div>
+                </td>
+              {{/each}}
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
   {{else}}
-    <div class="fr-grid">
-      {{#each myFactions}}
-        <div class="fr-card">
-          <div class="fr-card-controls" style="display: flex; align-items: center; gap: 12px;">
-            {{#if playerControlled}}
-              <div class="fr-arrow-group" style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                <button class="fr-arrow fr-arrow-up" data-fid="{{id}}" title="Increase" style="margin-bottom: 2px;">&#8593;</button>
-                <button class="fr-arrow fr-arrow-down" data-fid="{{id}}" title="Decrease" style="margin-top: 2px;">&#8595;</button>
-              </div>
-            {{/if}}
-            <img class="fr-card-img" src="{{img}}" />
+    <div class="fr-grid-container">
+      <div class="fr-grid">
+        {{#each myFactions}}
+          <div class="fr-card">
+            <div class="fr-card-controls" style="display: flex; align-items: center; gap: 12px;">
+              {{#if playerControlled}}
+                <div class="fr-arrow-group" style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                  <button class="fr-arrow fr-arrow-up" data-fid="{{id}}" title="Increase" style="margin-bottom: 2px;">&#8593;</button>
+                  <button class="fr-arrow fr-arrow-down" data-fid="{{id}}" title="Decrease" style="margin-top: 2px;">&#8595;</button>
+                </div>
+              {{/if}}
+              <img class="fr-card-img" src="{{img}}" />
+            </div>
+            <div class="fr-card-name">{{name}}</div>
+            <div class="fr-card-value">Value: {{value}}</div>
+            <div class="fr-card-meter">
+              {{#if (gt posWidth 0)}}
+                <span class="fr-card-meter-bar positive" style="width: {{posWidth}}%; left: 50%;"></span>
+              {{/if}}
+              {{#if (gt negWidth 0)}}
+                <span class="fr-card-meter-bar negative" style="width: {{negWidth}}%; left: calc(50% - {{negWidth}}%);"></span>
+              {{/if}}
+              <span class="fr-card-meter-zero"></span>
+            </div>
           </div>
-          <div class="fr-card-name">{{name}}</div>
-          <div class="fr-card-value">Value: {{value}}</div>
-          <div class="fr-card-meter">
-            {{#if (gt posWidth 0)}}
-              <span class="fr-card-meter-bar positive" style="width: {{posWidth}}%; left: 50%;"></span>
-            {{/if}}
-            {{#if (gt negWidth 0)}}
-              <span class="fr-card-meter-bar negative" style="width: {{negWidth}}%; left: calc(50% - {{negWidth}}%);"></span>
-            {{/if}}
-            <span class="fr-card-meter-zero"></span>
-          </div>
-        </div>
-      {{/each}}
+        {{/each}}
+      </div>
     </div>
   {{/if}}
 </div>
