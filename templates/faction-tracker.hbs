@@ -46,9 +46,30 @@
               </td>
               <td class="col-faction">
                 <span class="fr-faction">
-                  <img class="fr-img" src="{{img}}" data-fid="{{id}}" title="Change image" />
+                  <span class="fr-img-bg-container{{#if imgBgEnabled}} bg-enabled{{/if}} {{imgBgClass}}" data-fid="{{id}}" style="width:36px; height:36px;">
+                    <img class="fr-img" src="{{img}}" data-fid="{{id}}" title="Change image" />
+                  </span>
                   <span class="fr-name">{{name}}</span>
                   <span class="fr-del" data-fid="{{id}}" title="Delete">🗑️</span>
+                  <span class="fr-checkbox-label" title="Enable background color behind image">
+                    <input type="checkbox" class="fr-img-bg-toggle fr-checkbox" data-fid="{{id}}" {{#if imgBgEnabled}}checked{{/if}} /> BG
+                  </span>
+                  <span class="fr-bg-dropdown" style="display:inline-block;">
+                    <span class="fr-bg-selector" data-fid="{{id}}" title="Select Background" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
+                      <span class="fr-bg-preview {{imgBgClass}}" data-fid="{{id}}"></span>
+                      <span style="font-size:11px;">Color</span>
+                    </span>
+                    <div class="fr-bg-dropdown-content" data-fid="{{id}}">
+                      {{!-- Options list; keep in sync with backgrounds.css classes --}}
+                      {{#each ../backgroundOptions}}
+                        <div class="fr-bg-option" data-fid="{{../id}}" data-bgclass="{{class}}">
+                          <span class="fr-bg-option-preview {{class}}"></span>
+                          <span class="fr-bg-option-name">{{label}}</span>
+                        </div>
+                      {{/each}}
+                      <div class="fr-bg-option fr-bg-option-clear" data-fid="{{id}}" data-bgclass="">Clear</div>
+                    </div>
+                  </span>
                   <span class="fr-checkbox-label" title="Keep visible at zero?">
                     <input type="checkbox" class="fr-persist fr-checkbox" data-fid="{{id}}" {{#if persistOnZero}}checked{{/if}} />
                     Persist @ 0
@@ -78,7 +99,7 @@
     <div class="fr-grid-container">
       <div class="fr-grid">
         {{#each myFactions}}
-          <div class="fr-card">
+          <div class="fr-card" data-fid="{{id}}">
             <div class="fr-card-controls" style="display: flex; align-items: center; gap: 12px;">
               {{#if playerControlled}}
                 <div class="fr-arrow-group" style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
@@ -86,7 +107,26 @@
                   <button class="fr-arrow fr-arrow-down" data-fid="{{id}}" title="Decrease" style="margin-top: 2px;">&#8595;</button>
                 </div>
               {{/if}}
-              <img class="fr-card-img" src="{{img}}" />
+              <span class="fr-img-bg-container{{#if imgBgEnabled}} bg-enabled{{/if}} {{imgBgClass}}" data-fid="{{id}}" style="display:inline-flex; width:80px; height:80px;">
+                <img class="fr-card-img" src="{{img}}" />
+              </span>
+              <span class="fr-bg-dropdown" style="margin-left:4px;">
+                <span class="fr-bg-selector" data-fid="{{id}}" title="Select Background" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
+                  <span class="fr-bg-preview {{imgBgClass}}" data-fid="{{id}}"></span>
+                </span>
+                <div class="fr-bg-dropdown-content" data-fid="{{id}}">
+                  {{#each ../backgroundOptions}}
+                    <div class="fr-bg-option" data-fid="{{../id}}" data-bgclass="{{class}}">
+                      <span class="fr-bg-option-preview {{class}}"></span>
+                      <span class="fr-bg-option-name">{{label}}</span>
+                    </div>
+                  {{/each}}
+                  <div class="fr-bg-option fr-bg-option-clear" data-fid="{{id}}" data-bgclass="">Clear</div>
+                </div>
+              </span>
+              <span style="display:flex; align-items:center; gap:4px; font-size:11px;">
+                <input type="checkbox" class="fr-img-bg-toggle fr-checkbox" data-fid="{{id}}" {{#if imgBgEnabled}}checked{{/if}} title="Enable background" /> BG
+              </span>
             </div>
             <div class="fr-card-name">{{name}}</div>
             <div class="fr-card-value">Value: {{value}}</div>

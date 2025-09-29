@@ -9,7 +9,7 @@
   },
   "authors": [{ "name": "Luna-the-Turtle" }],
   "esmodules": ["scripts/main.js"],
-  "styles": ["styles/module.css"],
+  "styles": ["styles/module.css", "styles/backgrounds.css"],
   "license": "MIT",
   "readme": "README.md",
   "socket": true,

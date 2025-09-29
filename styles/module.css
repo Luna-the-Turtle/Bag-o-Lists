@@ -209,6 +209,7 @@
 }
 
 .fr-faction { display: flex; align-items: center; gap: 8px; }
+.fr-faction .fr-img-bg-container { flex: 0 0 36px; width:36px; height:36px; }
 .fr-img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; cursor: pointer; }
 .fr-name { font-weight: 600; }
 .fr-del { margin-left: auto; color: var(--color-text-muted, #888); cursor: pointer; }
@@ -291,6 +292,7 @@
   max-width: 260px;
   flex: 1 1 220px;
   overflow: visible;
+  position: relative;
 }
 .fr-card-img {
   width: 80px;
@@ -380,6 +382,16 @@
   background: #888;
   z-index: 3;
 }
+
+/* Lower normal content z-index so dropdown can overlay */
+.fr-card > .fr-card-name,
+.fr-card > .fr-card-value,
+.fr-card > .fr-card-meter,
+.fr-card .fr-card-meter-bar,
+.fr-card .fr-card-meter-zero { z-index: 10; }
+
+/* Dropdown and its container higher */
+.fr-card .fr-bg-dropdown { position: relative; z-index: 50; }
 
 /* Drag and Drop Styles */
 

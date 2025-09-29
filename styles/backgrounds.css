@@ -1,0 +1,194 @@
+/* Image background application for item images only */
+.fr-img-bg-container { display:inline-flex; align-items:center; justify-content:center; border-radius:6px; padding:0; box-sizing: border-box; overflow:hidden; }
+.fr-card .fr-img-bg-container { margin-bottom:10px; }
+.fr-img-bg-container img.fr-card-img { margin-bottom:0 !important; display:block; }
+/* Lock sizing when explicit width/height present */
+.fr-img-bg-container img.fr-img { width:36px; height:36px; }
+.fr-img-bg-container img.fr-card-img { width:80px; height:80px; }
+/* Table view: no extra margin around tiny image */
+.fr-faction .fr-img-bg-container { margin:0; }
+.fr-img-bg-container > img { width:100%; height:100%; object-fit:cover; display:block; }
+.fr-img-bg-container.bg-enabled > img { background:transparent !important; border:none !important; }
+.fr-img-bg-container.bg-enabled { border:1px solid #444; box-shadow: inset 0 0 2px rgba(0,0,0,0.4); }
+
+
+/* Fallback: subtle background if enabled but no class set */
+.fr-img-bg-container.bg-enabled:not([class*="fr-bg-"]) {
+  background: #23232b;
+}
+/* Background styles for Bag o' Lists */
+
+/* Pre-defined background styles */
+.fr-bg-gradient-blue {
+  background: linear-gradient(135deg, #2c3e50 0%, #4ca1af 100%);
+}
+
+.fr-bg-gradient-sunset {
+  background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
+}
+
+.fr-bg-gradient-purple {
+  background: linear-gradient(135deg, #834d9b 0%, #d04ed6 100%);
+}
+
+.fr-bg-gradient-forest {
+  background: linear-gradient(135deg, #304352 0%, #3a6073 50%, #3a7bd5 100%);
+}
+
+.fr-bg-gradient-fire {
+  background: linear-gradient(135deg, #8a2387 0%, #e94057 50%, #f27121 100%);
+}
+
+.fr-bg-solid-red {
+  background: #b71c1c;
+}
+
+.fr-bg-solid-blue {
+  background: #0d47a1;
+}
+
+.fr-bg-solid-green {
+  background: #1b5e20;
+}
+
+.fr-bg-solid-gold {
+  background: #b48e5a;
+}
+
+.fr-bg-solid-black {
+  background: #212121;
+}
+
+.fr-bg-solid-purple {
+  background: #4a148c;
+}
+
+
+/* Ensure the drag handle column keeps its width */
+.fr-table tbody tr.fr-has-bg td.col-drag-handle {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+}
+
+/* Text color adjustments for backgrounds */
+.fr-table tbody tr.fr-has-bg td {
+  color: white;
+  position: relative;
+  z-index: 1;
+}
+
+.fr-table tbody tr.fr-has-bg input,
+.fr-table tbody tr.fr-has-bg .fr-name,
+.fr-table tbody tr.fr-has-bg .fr-checkbox-label {
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* Custom background handling */
+.fr-table tbody tr.fr-has-bg.fr-bg-custom::before,
+.fr-card.fr-has-bg.fr-bg-custom::before {
+  background-size: cover !important;
+  background-position: center center !important;
+}
+
+/* Background selector styles */
+.fr-bg-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.fr-bg-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+}
+
+.fr-bg-selector:hover {
+  background-color: rgba(180, 142, 90, 0.1);
+}
+
+.fr-bg-preview {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #666;
+}
+
+.fr-bg-dropdown-content {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5000; /* Above other module UI */
+  min-width: 250px;
+  background-color: #23232b;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  border-radius: 4px;
+  padding: 8px;
+  border: 1px solid #444;
+}
+
+.fr-bg-dropdown.open .fr-bg-dropdown-content { display:block; }
+/* Ensure parent stacking context allows dropdown to appear above */
+.fr-card, .fr-table td { position: relative; }
+/* Elevate card when a dropdown inside is open */
+.fr-card.fr-dropdown-active { z-index: 6000; }
+
+.fr-bg-option {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  transition: background-color 0.2s;
+}
+
+.fr-bg-option:hover {
+  background-color: rgba(180, 142, 90, 0.2);
+}
+
+.fr-bg-dropdown-content {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.fr-bg-option-preview {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  margin-right: 8px;
+  border: 1px solid #666;
+}
+
+.fr-bg-option-name {
+  color: #f0f0f0;
+  font-weight: 500;
+}
+
+.fr-bg-custom-btn {
+  margin-top: 8px;
+  text-align: center;
+  padding: 6px;
+  background: rgba(180, 142, 90, 0.2);
+  border-radius: 4px;
+  color: #b48e5a;
+  cursor: pointer;
+}
+
+.fr-bg-custom-btn:hover {
+  background: rgba(180, 142, 90, 0.3);
+}
+
+/* --- Dropdown stacking fixes --- */
+/* Remove unnecessary stacking contexts from direct children so high z-index on dropdown works */
+/* Ensure normal card contents don't override dropdown */
+/* Ensure dropdown content is always above internal meters/text */
+.fr-bg-dropdown-content { z-index: 20000; }
+/* Extra safety: when card active elevate over neighbors */
+.fr-card.fr-dropdown-active { z-index: 30000; }

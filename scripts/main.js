@@ -54,6 +54,30 @@ Hooks.once('socketlib.ready', () => {
       window.broadcastStateToPlayers(latestState);
     }
   });
+  // Player or GM requests to update faction background (GM authoritative)
+  socket.register('updateFactionBackground', async (data) => {
+    if (!game.user.isGM) return; // Only GM mutates state
+    try {
+      const { pageId, factionId, imgBgEnabled, imgBgClass } = data;
+      const state = getState();
+      const page = state.pages.find(p => p.id === (pageId || state.activePageId));
+      if (!page) return;
+      const faction = page.factions.find(f => f.id === factionId);
+      if (!faction) return;
+      if (typeof imgBgEnabled === 'boolean') faction.imgBgEnabled = imgBgEnabled;
+      if (typeof imgBgClass === 'string') faction.imgBgClass = imgBgClass;
+      await saveState(state);
+      // Broadcast latest state
+      const latestState = getState();
+      // Do not force activePageId on players
+      window.broadcastStateToPlayers(latestState);
+      // Locally update temp state for GM
+      window._fr_temp_state = latestState;
+      if (game.factionTracker?.rendered) game.factionTracker.render(true);
+    } catch (e) {
+      logError('updateFactionBackground failed', e);
+    }
+  });
   
   // Store socket reference for use in GM emit
   game.bagOfListsSocket = socket;
@@ -273,6 +297,8 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         img: f.img || "icons/svg/shield.svg",
         persistOnZero: f.persistOnZero ?? true,
         playerControlled: f.playerControlled ?? false,
+        imgBgEnabled: f.imgBgEnabled ?? false,
+        imgBgClass: f.imgBgClass || '',
         cells
       };
     });
@@ -313,6 +339,8 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
             img: f.img || "icons/svg/shield.svg",
             persistOnZero: f.persistOnZero ?? true,
             playerControlled: f.playerControlled ?? false,
+            imgBgEnabled: f.imgBgEnabled ?? false,
+            imgBgClass: f.imgBgClass || '',
             value: clamped,
             posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
             negWidth: (clamped < 0) ? Math.round(pct * 50) : 0
@@ -326,7 +354,20 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         pages: playerPages,
         activePageId,
         myFactions,
-        pageName: activePage.name
+        pageName: activePage.name,
+        backgroundOptions: [
+          { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
+          { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
+            { class: 'fr-bg-gradient-purple', label: 'Purple Gradient' },
+            { class: 'fr-bg-gradient-forest', label: 'Forest Gradient' },
+            { class: 'fr-bg-gradient-fire', label: 'Fire Gradient' },
+            { class: 'fr-bg-solid-red', label: 'Solid Red' },
+            { class: 'fr-bg-solid-blue', label: 'Solid Blue' },
+            { class: 'fr-bg-solid-green', label: 'Solid Green' },
+            { class: 'fr-bg-solid-gold', label: 'Solid Gold' },
+            { class: 'fr-bg-solid-black', label: 'Solid Black' },
+            { class: 'fr-bg-solid-purple', label: 'Solid Purple' }
+        ]
       };
     }
 
@@ -338,7 +379,20 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       factions: gmFactions,
       pages: state.pages,
       activePageId: state.activePageId,
-      pageName: activePage.name
+      pageName: activePage.name,
+      backgroundOptions: [
+        { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
+        { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
+        { class: 'fr-bg-gradient-purple', label: 'Purple Gradient' },
+        { class: 'fr-bg-gradient-forest', label: 'Forest Gradient' },
+        { class: 'fr-bg-gradient-fire', label: 'Fire Gradient' },
+        { class: 'fr-bg-solid-red', label: 'Solid Red' },
+        { class: 'fr-bg-solid-blue', label: 'Solid Blue' },
+        { class: 'fr-bg-solid-green', label: 'Solid Green' },
+        { class: 'fr-bg-solid-gold', label: 'Solid Gold' },
+        { class: 'fr-bg-solid-black', label: 'Solid Black' },
+        { class: 'fr-bg-solid-purple', label: 'Solid Purple' }
+      ]
     };
   }
 
@@ -695,6 +749,92 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       }
     });
 
+    // Toggle image background enable/disable (GM and Player allowed)
+    $html.find('.fr-img-bg-toggle').on('change', async (ev) => {
+      const fid = ev.currentTarget.dataset.fid;
+      const enabled = ev.currentTarget.checked;
+      const globalState = getState();
+      const localActivePageId = window._fr_temp_state?.activePageId || globalState.activePageId;
+      const page = globalState.pages.find(p => p.id === localActivePageId);
+      if (!page) return;
+      const faction = page.factions.find(f => f.id === fid);
+      if (!faction) return;
+      // Optimistic local update
+      faction.imgBgEnabled = enabled;
+      // Preserve player's active page if different from GM's
+      window._fr_temp_state = { ...globalState, activePageId: localActivePageId };
+      this.render(true);
+      if (game.user.isGM) {
+        await saveState(globalState);
+      } else if (game.bagOfListsSocket) {
+        game.bagOfListsSocket.executeAsGM('updateFactionBackground', {
+          pageId: localActivePageId,
+          factionId: fid,
+          imgBgEnabled: enabled
+        });
+      }
+    });
+
+    // Selecting a background option
+    $html.find('.fr-bg-option').on('click', async (ev) => {
+      const fid = ev.currentTarget.dataset.fid;
+      const bgClass = ev.currentTarget.dataset.bgclass || '';
+      const globalState = getState();
+      const localActivePageId = window._fr_temp_state?.activePageId || globalState.activePageId;
+      const page = globalState.pages.find(p => p.id === localActivePageId);
+      if (!page) return;
+      const faction = page.factions.find(f => f.id === fid);
+      if (!faction) return;
+      faction.imgBgClass = bgClass;
+      if (bgClass && !faction.imgBgEnabled) faction.imgBgEnabled = true;
+      window._fr_temp_state = { ...globalState, activePageId: localActivePageId }; // optimistic
+      // Close dropdown
+      const dd = ev.currentTarget.closest('.fr-bg-dropdown');
+      if (dd) dd.classList.remove('open');
+      this.render(true);
+      if (game.user.isGM) {
+        await saveState(globalState);
+      } else if (game.bagOfListsSocket) {
+        game.bagOfListsSocket.executeAsGM('updateFactionBackground', {
+          pageId: localActivePageId,
+          factionId: fid,
+          imgBgClass: bgClass,
+          imgBgEnabled: faction.imgBgEnabled
+        });
+      }
+    });
+
+    // Dropdown click toggler (prevent hover-open) - attach once per render
+    $html.find('.fr-bg-selector').off('click').on('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const dd = ev.currentTarget.closest('.fr-bg-dropdown');
+      if (!dd) return;
+      // Close others first
+      $html.find('.fr-bg-dropdown.open').not(dd).each((_, el) => {
+        el.classList.remove('open');
+        const card = el.closest('.fr-card');
+        if (card) card.classList.remove('fr-dropdown-active');
+      });
+      const willOpen = !dd.classList.contains('open');
+      dd.classList.toggle('open');
+      const parentCard = dd.closest('.fr-card');
+      if (parentCard) {
+        if (willOpen) parentCard.classList.add('fr-dropdown-active');
+        else parentCard.classList.remove('fr-dropdown-active');
+      }
+    });
+    // Global outside click to close
+    $(document).off('click.bol-bg').on('click.bol-bg', (ev) => {
+      if (!ev.target.closest('.fr-bg-dropdown')) {
+        $html.find('.fr-bg-dropdown.open').each((_, el) => {
+          el.classList.remove('open');
+          const card = el.closest('.fr-card');
+          if (card) card.classList.remove('fr-dropdown-active');
+        });
+      }
+    });
+
     // Change faction image in active page
     $html.find('.fr-img').on('click', (ev) => {
       const fid = ev.currentTarget.dataset.fid;
@@ -753,9 +893,11 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
   _initializeDragAndDrop($html) {
     // Only allow drag and drop for GM (tables) and players with player-controlled factions (cards)
     const isGM = !!game.user.isGM;
+    // Reordering should be GM-only per new requirement
+    if (!isGM) return; // Disable entirely for players
     
     // Get draggable elements based on view
-    const draggableSelector = isGM ? '.fr-drag-handle' : '.fr-card';
+  const draggableSelector = '.fr-drag-handle';
     const $draggables = $html.find(draggableSelector);
 
     if ($draggables.length === 0) {
