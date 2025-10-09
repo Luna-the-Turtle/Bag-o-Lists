@@ -18,15 +18,22 @@ function logError(message, error) {
 // --- Socketlib Integration ---
 Hooks.once('socketlib.ready', () => {
   const socket = socketlib.registerModule('bag-of-lists');
-  // Register the real update function for live sync
+  // Register the update function for live sync
   socket.register('updateState', (newState) => {
     // Only update the shared data, preserve each user's active page
     const currentActivePageId = window._fr_temp_state?.activePageId;
+    const currentActiveCustomEntryId = window._fr_custom_activeEntryId;
     window._fr_temp_state = foundry.utils.duplicate(newState);
     
     // Restore user's active page if it exists and is valid
     if (currentActivePageId && newState.pages?.some(p => p.id === currentActivePageId)) {
       window._fr_temp_state.activePageId = currentActivePageId;
+    }
+    const sharedEntries = window._fr_temp_state.customEntries?.filter?.(entry => entry.sharedToPlayers) ?? [];
+    if (currentActiveCustomEntryId && sharedEntries.some(entry => entry.id === currentActiveCustomEntryId)) {
+      window._fr_custom_activeEntryId = currentActiveCustomEntryId;
+    } else {
+      window._fr_custom_activeEntryId = sharedEntries[0]?.id ?? null;
     }
     
     if (game.factionTracker?.rendered) {
@@ -37,22 +44,47 @@ Hooks.once('socketlib.ready', () => {
   // Register handler for player value changes (GM only)
   socket.register('playerValueChange', async (data) => {
     if (!game.user.isGM) return; // Only GM can save
-    
-    const { factionId, userId, newValue } = data;
+    const { factionId, userId, newValue, pageId } = data || {};
+    if (!factionId || !userId) return;
+
     const state = getState();
-    const page = state.pages.find(p => p.id === state.activePageId);
-    
+    const targetPageId = pageId || state.activePageId;
+    const page = state.pages.find(p => p.id === targetPageId);
+
     if (page) {
       page.userRelations ||= {};
       page.userRelations[userId] ||= {};
       page.userRelations[userId][factionId] = newValue;
-      
+      resetAnnouncementDismissalsForPage(page);
+
       await saveState(state);
-      
+
       // Broadcast the updated state to everyone (without activePageId)
       const latestState = getState();
       window.broadcastStateToPlayers(latestState);
     }
+  });
+
+  socket.register('playerDismissAnnouncement', async (data) => {
+    if (!game.user.isGM) return;
+    const { pageId, announcementId, userId } = data || {};
+    if (!pageId || !announcementId || !userId || userId === 'gm') return;
+
+    const state = getState();
+    const page = state.pages.find(p => p.id === pageId);
+    if (!page?.announcements) return;
+    const announcement = page.announcements.find(a => a.id === announcementId);
+    if (!announcement) return;
+    if (!Array.isArray(announcement.targets) || !announcement.targets.includes(userId)) return;
+
+    announcement.dismissedBy ||= {};
+    announcement.dismissedBy[userId] = true;
+    resetAnnouncementDismissalsForPage(page);
+
+    await saveState(state);
+
+    const latestState = getState();
+    window.broadcastStateToPlayers(latestState);
   });
   // Player or GM requests to update faction background (GM authoritative)
   socket.register('updateFactionBackground', async (data) => {
@@ -78,6 +110,27 @@ Hooks.once('socketlib.ready', () => {
       logError('updateFactionBackground failed', e);
     }
   });
+
+  socket.register('updateFactionImageConfig', async (data) => {
+    if (!game.user.isGM) return;
+    try {
+      const { pageId, factionId, imgConfig } = data || {};
+      const state = getState();
+      const targetPageId = pageId || state.activePageId;
+      const page = state.pages.find(p => p.id === targetPageId);
+      if (!page) return;
+      const faction = page.factions.find(f => f.id === factionId);
+      if (!faction) return;
+      faction.imgConfig = normalizeImageConfig(imgConfig);
+      await saveState(state);
+      const latest = getState();
+      window.broadcastStateToPlayers(latest);
+      window._fr_temp_state = latest;
+      if (game.factionTracker?.rendered) game.factionTracker.render(true);
+    } catch (e) {
+      logError('updateFactionImageConfig failed', e);
+    }
+  });
   
   // Store socket reference for use in GM emit
   game.bagOfListsSocket = socket;
@@ -91,6 +144,21 @@ Hooks.once('socketlib.ready', () => {
       game.bagOfListsSocket.executeForEveryone('updateState', stateCopy);
     }
   };
+  if (typeof window._fr_custom_activeEntryId === 'undefined') {
+    window._fr_custom_activeEntryId = null;
+  }
+  if (typeof window._fr_player_activeTab === 'undefined') {
+    window._fr_player_activeTab = null;
+  }
+  if (!window._fr_custom_activePageMap || typeof window._fr_custom_activePageMap !== 'object') {
+    window._fr_custom_activePageMap = {};
+  }
+  if (!Array.isArray(window._fr_lastAnnouncementRecipients)) {
+    window._fr_lastAnnouncementRecipients = ['gm'];
+  }
+  if (typeof window._fr_lastAnnouncementSelectedId === 'undefined') {
+    window._fr_lastAnnouncementSelectedId = null;
+  }
 });
 
 Hooks.on('updateSetting', (setting, value) => {
@@ -124,10 +192,12 @@ Hooks.once("init", () => {
           id: foundry.utils.randomID(),
           name: "Factions",
           factions: [],
-          userRelations: {}
+          userRelations: {},
+          announcements: []
         }
       ],
-      activePageId: null // will be set to first page on load
+      activePageId: null, // will be set to first page on load
+      customEntries: []
     }
   });
 });
@@ -138,9 +208,48 @@ function getState() {
   // Remove legacy global arrays if present
   if (state.factions) delete state.factions;
   if (state.userRelations) delete state.userRelations;
+  if (!Array.isArray(state.pages)) {
+    state.pages = [];
+  }
+  for (const page of state.pages) {
+    if (!Array.isArray(page.factions)) {
+      page.factions = [];
+    }
+    if (!page.userRelations || typeof page.userRelations !== 'object') {
+      page.userRelations = {};
+    }
+    if (!Array.isArray(page.announcements)) {
+      page.announcements = [];
+    }
+    for (const announcement of page.announcements) {
+      if (!Array.isArray(announcement.targets) || announcement.targets.length === 0) {
+        announcement.targets = ['gm'];
+      }
+      if (!announcement.dismissedBy || typeof announcement.dismissedBy !== 'object') {
+        announcement.dismissedBy = {};
+      } else {
+        for (const targetId of Object.keys(announcement.dismissedBy)) {
+          if (targetId === 'gm' || !announcement.targets.includes(targetId)) {
+            delete announcement.dismissedBy[targetId];
+          }
+        }
+      }
+      announcement.operator = announcement.operator === 'ge' ? 'ge' : 'le';
+      if (typeof announcement.threshold === 'string') {
+        const trimmed = announcement.threshold.trim();
+        if (trimmed !== '') {
+          const num = Number(trimmed);
+          if (Number.isFinite(num)) announcement.threshold = num;
+        }
+      }
+    }
+  }
   // If no activePageId, set to first page
-  if (!state.activePageId && state.pages?.length) {
+  if (!state.activePageId && state.pages.length) {
     state.activePageId = state.pages[0].id;
+  }
+  if (!Array.isArray(state.customEntries)) {
+    state.customEntries = [];
   }
   return state;
 }
@@ -150,6 +259,508 @@ async function saveState(state) {
   // If GM, broadcast new state to all clients using socketlib (without activePageId)
   if (game.user?.isGM && game.bagOfListsSocket) {
     window.broadcastStateToPlayers(state);
+  }
+}
+
+const PORTRAIT_EDITOR_SIZE = 320;
+const PORTRAIT_MIN_SCALE = 0.5;
+const PORTRAIT_DEFAULT_SCALE = 1;
+const PORTRAIT_MAX_SCALE = 3;
+const PORTRAIT_SCALE_STEP = 0.05;
+const PORTRAIT_OFFSET_MARGIN = PORTRAIT_EDITOR_SIZE;
+
+function defaultImageConfig() {
+  return {
+    scale: PORTRAIT_DEFAULT_SCALE,
+    offsetX: 0,
+    offsetY: 0,
+    editorSize: PORTRAIT_EDITOR_SIZE
+  };
+}
+
+function normalizeImageConfig(config) {
+  const defaults = defaultImageConfig();
+  if (!config || typeof config !== 'object') {
+    return { ...defaults };
+  }
+  const editorSize = Number(config.editorSize) || PORTRAIT_EDITOR_SIZE;
+  const scale = Number(config.scale);
+  return {
+    scale: Number.isFinite(scale) ? Math.max(PORTRAIT_MIN_SCALE, Math.min(PORTRAIT_MAX_SCALE, scale)) : PORTRAIT_DEFAULT_SCALE,
+    offsetX: Number.isFinite(Number(config.offsetX)) ? Number(config.offsetX) : defaults.offsetX,
+    offsetY: Number.isFinite(Number(config.offsetY)) ? Number(config.offsetY) : defaults.offsetY,
+    editorSize
+  };
+}
+
+function doesAnnouncementPassForTarget(announcement, page, targetId) {
+  if (!announcement || !page || !targetId || targetId === 'gm') return false;
+  if (!Array.isArray(announcement.targets) || !announcement.targets.includes(targetId)) return false;
+  const thresholdNumeric = Number(announcement.threshold);
+  if (!Number.isFinite(thresholdNumeric)) return false;
+  const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
+  const relationValue = Number(page.userRelations?.[targetId]?.[announcement.factionId]);
+  if (!Number.isFinite(relationValue)) return false;
+  return operatorKey === 'ge' ? relationValue >= thresholdNumeric : relationValue <= thresholdNumeric;
+}
+
+function resetAnnouncementDismissalsForPage(page) {
+  if (!page || !Array.isArray(page.announcements) || page.announcements.length === 0) return;
+  for (const announcement of page.announcements) {
+    if (!announcement || typeof announcement !== 'object') continue;
+    if (!Array.isArray(announcement.targets) || announcement.targets.length === 0) continue;
+    const dismissedBy = announcement.dismissedBy;
+    if (!dismissedBy || typeof dismissedBy !== 'object') continue;
+    for (const targetId of Object.keys(dismissedBy)) {
+      if (targetId === 'gm') {
+        delete dismissedBy[targetId];
+        continue;
+      }
+      if (!announcement.targets.includes(targetId) || !doesAnnouncementPassForTarget(announcement, page, targetId)) {
+        delete dismissedBy[targetId];
+      }
+    }
+    if (Object.keys(dismissedBy).length === 0) {
+      delete announcement.dismissedBy;
+    }
+  }
+}
+
+function applyImageTransforms(root = document) {
+  const scope = root instanceof HTMLElement ? root : document;
+  const images = scope.querySelectorAll?.('.fr-img-transformable');
+  if (!images || images.length === 0) return;
+
+  images.forEach((img) => {
+    const applyTransform = () => {
+      try {
+        const container = img.closest('[data-viewport-size]');
+        if (!container) return;
+        const viewportSize = Number(container.dataset.viewportSize) || container.clientWidth || container.clientHeight || 48;
+        const config = normalizeImageConfig({
+          scale: Number(img.dataset.scale),
+          offsetX: Number(img.dataset.offsetX),
+          offsetY: Number(img.dataset.offsetY),
+          editorSize: Number(img.dataset.editorSize)
+        });
+        const ratio = viewportSize / (config.editorSize || PORTRAIT_EDITOR_SIZE);
+        const offsetX = (config.offsetX || 0) * ratio;
+        const offsetY = (config.offsetY || 0) * ratio;
+        const naturalWidth = img.naturalWidth || viewportSize;
+        const naturalHeight = img.naturalHeight || viewportSize;
+  const baseScale = Math.min(viewportSize / naturalWidth, viewportSize / naturalHeight) || 1;
+  const scale = baseScale * (config.scale ?? PORTRAIT_DEFAULT_SCALE);
+
+        img.style.position = 'absolute';
+        img.style.left = '50%';
+        img.style.top = '50%';
+        img.style.transformOrigin = 'center center';
+        img.style.transform = `translate(calc(-50% + ${offsetX}px), calc(-50% + ${offsetY}px)) scale(${scale})`;
+      } catch (err) {
+        logError('Failed to apply image transform', err);
+      }
+    };
+
+    if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      applyTransform();
+    } else {
+      img.addEventListener('load', applyTransform, { once: true });
+      img.addEventListener('error', () => {
+        img.style.transform = '';
+      }, { once: true });
+    }
+  });
+}
+
+function getPlayerVisiblePages(state, userId) {
+  if (!state?.pages || state.pages.length === 0 || !userId) return [];
+  return state.pages.filter((page) => {
+    const factions = page.factions || [];
+    if (factions.length === 0) return false;
+    const relations = page.userRelations?.[userId];
+    if (!relations) return false;
+    return factions.some((faction) => {
+      if (!Object.prototype.hasOwnProperty.call(relations, faction.id)) return false;
+      const value = Number(relations[faction.id]);
+      if (!Number.isFinite(value)) return false;
+      if (value !== 0) return true;
+      return !!faction.persistOnZero;
+    });
+  });
+}
+
+function getPlayerFactionValue(page, userId, faction) {
+  const relations = page.userRelations?.[userId];
+  if (!relations) {
+    return { hasEntry: false, value: null };
+  }
+  const hasEntry = Object.prototype.hasOwnProperty.call(relations, faction.id);
+  if (!hasEntry) {
+    return { hasEntry: false, value: null };
+  }
+  const value = Number(relations[faction.id]);
+  if (!Number.isFinite(value)) {
+    return { hasEntry: false, value: null };
+  }
+  return { hasEntry: true, value };
+}
+
+function buildFactionDisplay(page, userId, faction) {
+  const { hasEntry, value } = getPlayerFactionValue(page, userId, faction);
+  if (!hasEntry) return null;
+  if (value === 0 && !faction.persistOnZero) return null;
+  const imgConfig = normalizeImageConfig(faction.imgConfig);
+  const clamped = Math.max(-50, Math.min(50, Number(value) || 0));
+  const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
+  return {
+    id: faction.id,
+    name: faction.name,
+    img: faction.img || "icons/svg/shield.svg",
+    persistOnZero: !!faction.persistOnZero,
+    playerControlled: faction.playerControlled ?? false,
+    imgBgEnabled: faction.imgBgEnabled ?? false,
+    imgBgClass: faction.imgBgClass || '',
+    value: clamped,
+    posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
+    negWidth: (clamped < 0) ? Math.round(pct * 50) : 0,
+    imgScale: imgConfig.scale,
+    imgOffsetX: imgConfig.offsetX,
+    imgOffsetY: imgConfig.offsetY,
+    imgEditorSize: imgConfig.editorSize,
+    pageId: page.id
+  };
+}
+
+class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor({ pageId, factionId, imgSrc, imgConfig, parentApp } = {}) {
+    super({ id: `bol-portrait-editor-${foundry.utils.randomID()}` });
+    this.pageId = pageId;
+    this.factionId = factionId;
+    this.imgSrc = imgSrc;
+    this.parentApp = parentApp;
+    this._viewportSize = PORTRAIT_EDITOR_SIZE;
+    this._state = this._initializeState(normalizeImageConfig(imgConfig));
+    this._imageReady = false;
+    this._dragging = false;
+    this._pointerId = null;
+    this._lastPointer = null;
+
+    this._onZoomInputHandler = this._handleZoomInput.bind(this);
+  this._onZoomInHandler = this._handleZoomIn.bind(this);
+  this._onZoomOutHandler = this._handleZoomOut.bind(this);
+    this._onWheelHandler = this._handleWheel.bind(this);
+    this._onResetHandler = this._handleReset.bind(this);
+    this._onSaveHandler = this._handleSave.bind(this);
+    this._onCancelHandler = this._handleCancel.bind(this);
+    this._onPointerDownHandler = this._handlePointerDown.bind(this);
+    this._boundPointerMove = this._handlePointerMove.bind(this);
+    this._boundPointerUp = this._handlePointerUp.bind(this);
+  }
+
+  _initializeState(config) {
+    let offsetX = Number(config.offsetX) || 0;
+    let offsetY = Number(config.offsetY) || 0;
+  const editorSize = Number(config.editorSize) || PORTRAIT_EDITOR_SIZE;
+    if (editorSize !== PORTRAIT_EDITOR_SIZE) {
+      const ratio = PORTRAIT_EDITOR_SIZE / editorSize;
+      offsetX *= ratio;
+      offsetY *= ratio;
+    }
+    const scale = Number.isFinite(Number(config.scale)) ? Number(config.scale) : PORTRAIT_DEFAULT_SCALE;
+    return {
+      scale: Math.max(PORTRAIT_MIN_SCALE, Math.min(PORTRAIT_MAX_SCALE, scale)),
+      offsetX,
+      offsetY,
+      editorSize: PORTRAIT_EDITOR_SIZE,
+      baseScale: 1,
+      naturalWidth: PORTRAIT_EDITOR_SIZE,
+      naturalHeight: PORTRAIT_EDITOR_SIZE
+    };
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: 'bol-portrait-editor',
+    tag: 'form',
+    window: {
+      title: 'Token Portrait Editor',
+      resizable: false,
+      minimizable: false
+    },
+    position: {
+      width: 640,
+      height: 'auto'
+    },
+    actions: {},
+    form: {
+      handler: undefined,
+      submitOnChange: false,
+      closeOnSubmit: false
+    }
+  };
+
+  static PARTS = {
+    form: {
+      template: 'modules/bag-of-lists/templates/portrait-editor.hbs'
+    }
+  };
+
+  async _prepareContext() {
+    return {
+      imageSrc: this.imgSrc,
+      viewportSize: this._viewportSize,
+      scale: this._state.scale,
+      zoomPercent: Math.round(this._state.scale * 100),
+      offsetX: Math.round(this._state.offsetX),
+      offsetY: Math.round(this._state.offsetY),
+      minZoom: PORTRAIT_MIN_SCALE * 100,
+      maxZoom: PORTRAIT_MAX_SCALE * 100,
+      zoomStep: PORTRAIT_SCALE_STEP * 100
+    };
+  }
+
+  _cacheElements() {
+    this._viewportEl = this.element?.querySelector('.portrait-editor-viewport');
+    this._imgFrame = this.element?.querySelector('.portrait-editor-frame');
+    this._imgEl = this.element?.querySelector('.portrait-editor-img');
+    this._zoomSlider = this.element?.querySelector('.portrait-editor-zoom-range');
+    this._zoomLabel = this.element?.querySelector('.portrait-editor-zoom-value');
+    this._offsetLabel = this.element?.querySelector('.portrait-editor-offset-value');
+    this._resetButton = this.element?.querySelector('.portrait-editor-reset');
+    this._saveButton = this.element?.querySelector('.portrait-editor-save');
+    this._cancelButton = this.element?.querySelector('.portrait-editor-cancel');
+    this._zoomInButton = this.element?.querySelector('[data-action="zoom-in"]');
+    this._zoomOutButton = this.element?.querySelector('[data-action="zoom-out"]');
+  }
+
+  _attachEventListeners() {
+    if (this._zoomSlider) {
+      this._zoomSlider.min = String(PORTRAIT_MIN_SCALE * 100);
+      this._zoomSlider.max = String(PORTRAIT_MAX_SCALE * 100);
+      this._zoomSlider.step = String(Math.max(1, PORTRAIT_SCALE_STEP * 100));
+      this._zoomSlider.value = String(Math.round(this._state.scale * 100));
+      this._zoomSlider.addEventListener('input', this._onZoomInputHandler);
+    }
+    if (this._imgFrame) {
+      this._imgFrame.addEventListener('pointerdown', this._onPointerDownHandler);
+      this._imgFrame.addEventListener('wheel', this._onWheelHandler, { passive: false });
+    }
+    this._resetButton?.addEventListener('click', this._onResetHandler);
+    this._saveButton?.addEventListener('click', this._onSaveHandler);
+    this._cancelButton?.addEventListener('click', this._onCancelHandler);
+    this._zoomInButton?.addEventListener('click', this._onZoomInHandler);
+    this._zoomOutButton?.addEventListener('click', this._onZoomOutHandler);
+  }
+
+  _detachEventListeners() {
+    this._zoomSlider?.removeEventListener('input', this._onZoomInputHandler);
+    this._imgFrame?.removeEventListener('pointerdown', this._onPointerDownHandler);
+    this._imgFrame?.removeEventListener('wheel', this._onWheelHandler);
+    this._resetButton?.removeEventListener('click', this._onResetHandler);
+    this._saveButton?.removeEventListener('click', this._onSaveHandler);
+    this._cancelButton?.removeEventListener('click', this._onCancelHandler);
+    this._zoomInButton?.removeEventListener('click', this._onZoomInHandler);
+    this._zoomOutButton?.removeEventListener('click', this._onZoomOutHandler);
+    window.removeEventListener('pointermove', this._boundPointerMove);
+    window.removeEventListener('pointerup', this._boundPointerUp);
+    window.removeEventListener('pointercancel', this._boundPointerUp);
+  }
+
+  _setupImage() {
+    if (!this._imgEl) return;
+    const handleLoad = () => {
+      this._imageReady = true;
+      const naturalWidth = this._imgEl.naturalWidth || PORTRAIT_EDITOR_SIZE;
+      const naturalHeight = this._imgEl.naturalHeight || PORTRAIT_EDITOR_SIZE;
+      this._state.naturalWidth = naturalWidth;
+      this._state.naturalHeight = naturalHeight;
+      this._state.baseScale = Math.min(this._viewportSize / naturalWidth, this._viewportSize / naturalHeight) || 1;
+      const clamped = this._clampOffsets(this._state.offsetX, this._state.offsetY);
+      this._state.offsetX = clamped.offsetX;
+      this._state.offsetY = clamped.offsetY;
+      this._applyStateToDom();
+    };
+    if (this._imgEl.complete && this._imgEl.naturalWidth > 0) {
+      handleLoad();
+    } else {
+      this._imgEl.addEventListener('load', handleLoad, { once: true });
+      this._imgEl.addEventListener('error', () => {
+        ui.notifications?.error('Failed to load portrait image.');
+      }, { once: true });
+    }
+  }
+
+  _handleZoomInput(event) {
+    const value = Number(event.currentTarget.value) || PORTRAIT_MIN_SCALE * 100;
+    this._setScale(value / 100);
+  }
+
+  _handleWheel(event) {
+    event.preventDefault();
+    const direction = event.deltaY < 0 ? -1 : 1;
+    const step = PORTRAIT_SCALE_STEP;
+    this._setScale(this._state.scale - direction * step);
+  }
+
+  _handleZoomIn(event) {
+    event.preventDefault();
+    this._setScale(this._state.scale + PORTRAIT_SCALE_STEP);
+  }
+
+  _handleZoomOut(event) {
+    event.preventDefault();
+    this._setScale(this._state.scale - PORTRAIT_SCALE_STEP);
+  }
+
+  _handleReset(event) {
+    event.preventDefault();
+    this._state.scale = PORTRAIT_DEFAULT_SCALE;
+    this._state.offsetX = 0;
+    this._state.offsetY = 0;
+    this._applyStateToDom();
+  }
+
+  async _handleSave(event) {
+    event.preventDefault();
+    try {
+      const payload = {
+        scale: Number(this._state.scale.toFixed(4)),
+        offsetX: Number(this._state.offsetX.toFixed(2)),
+        offsetY: Number(this._state.offsetY.toFixed(2)),
+        editorSize: PORTRAIT_EDITOR_SIZE
+      };
+      await this._persistConfig(payload);
+      this.close();
+    } catch (err) {
+      logError('Failed to save portrait configuration', err);
+      ui.notifications?.error('Failed to save portrait changes.');
+    }
+  }
+
+  _handleCancel(event) {
+    event.preventDefault();
+    this.close();
+  }
+
+  _handlePointerDown(event) {
+    if (!this._imageReady) return;
+    event.preventDefault();
+    this._dragging = true;
+    this._pointerId = event.pointerId;
+    this._lastPointer = { x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    window.addEventListener('pointermove', this._boundPointerMove);
+    window.addEventListener('pointerup', this._boundPointerUp);
+    window.addEventListener('pointercancel', this._boundPointerUp);
+  }
+
+  _handlePointerMove(event) {
+    if (!this._dragging || event.pointerId !== this._pointerId) return;
+    event.preventDefault();
+    const deltaX = event.clientX - this._lastPointer.x;
+    const deltaY = event.clientY - this._lastPointer.y;
+    this._lastPointer = { x: event.clientX, y: event.clientY };
+    this._state.offsetX += deltaX;
+    this._state.offsetY += deltaY;
+    const clamped = this._clampOffsets(this._state.offsetX, this._state.offsetY);
+    this._state.offsetX = clamped.offsetX;
+    this._state.offsetY = clamped.offsetY;
+    this._applyStateToDom();
+  }
+
+  _handlePointerUp(event) {
+    if (event.pointerId !== this._pointerId) return;
+    event.preventDefault();
+    this._dragging = false;
+    this._pointerId = null;
+    this._lastPointer = null;
+    this._imgFrame?.releasePointerCapture?.(event.pointerId);
+    window.removeEventListener('pointermove', this._boundPointerMove);
+    window.removeEventListener('pointerup', this._boundPointerUp);
+    window.removeEventListener('pointercancel', this._boundPointerUp);
+  }
+
+  _setScale(newScale) {
+    const clampedScale = Math.max(PORTRAIT_MIN_SCALE, Math.min(PORTRAIT_MAX_SCALE, newScale));
+    this._state.scale = clampedScale;
+    const clamped = this._clampOffsets(this._state.offsetX, this._state.offsetY);
+    this._state.offsetX = clamped.offsetX;
+    this._state.offsetY = clamped.offsetY;
+    this._applyStateToDom();
+  }
+
+  _clampOffsets(offsetX, offsetY) {
+    if (!this._imageReady) {
+      return { offsetX, offsetY };
+    }
+    const displayWidth = this._state.naturalWidth * this._state.baseScale * this._state.scale;
+    const displayHeight = this._state.naturalHeight * this._state.baseScale * this._state.scale;
+    const extraMarginX = PORTRAIT_OFFSET_MARGIN;
+    const extraMarginY = PORTRAIT_OFFSET_MARGIN;
+    const maxOffsetX = Math.max(0, (displayWidth - this._viewportSize) / 2 + extraMarginX);
+    const maxOffsetY = Math.max(0, (displayHeight - this._viewportSize) / 2 + extraMarginY);
+    return {
+      offsetX: Math.min(maxOffsetX, Math.max(-maxOffsetX, offsetX)),
+      offsetY: Math.min(maxOffsetY, Math.max(-maxOffsetY, offsetY))
+    };
+  }
+
+  _applyStateToDom() {
+    if (!this._imgEl) return;
+    this._imgEl.dataset.scale = String(this._state.scale);
+    this._imgEl.dataset.offsetX = String(this._state.offsetX);
+    this._imgEl.dataset.offsetY = String(this._state.offsetY);
+    this._imgEl.dataset.editorSize = String(PORTRAIT_EDITOR_SIZE);
+    applyImageTransforms(this.element);
+    this._syncControls();
+  }
+
+  _syncControls() {
+    if (this._zoomSlider) {
+      this._zoomSlider.value = String(Math.round(this._state.scale * 100));
+    }
+    if (this._zoomLabel) {
+      this._zoomLabel.textContent = `${Math.round(this._state.scale * 100)}%`;
+    }
+    if (this._offsetLabel) {
+      this._offsetLabel.textContent = `x: ${Math.round(this._state.offsetX)}px, y: ${Math.round(this._state.offsetY)}px`;
+    }
+  }
+
+  async _persistConfig(config) {
+    if (game.user.isGM) {
+      const state = getState();
+      const page = state.pages?.find?.(p => p.id === this.pageId);
+      if (!page) throw new Error('Page not found for portrait update');
+      const faction = page.factions?.find?.(f => f.id === this.factionId);
+      if (!faction) throw new Error('Faction not found for portrait update');
+      faction.imgConfig = config;
+      await saveState(state);
+      const latest = getState();
+      window._fr_temp_state = latest;
+      if (this.parentApp?.rendered) {
+        this.parentApp.render(true);
+      }
+    } else if (game.bagOfListsSocket) {
+      game.bagOfListsSocket.executeAsGM('updateFactionImageConfig', {
+        pageId: this.pageId,
+        factionId: this.factionId,
+        imgConfig: config
+      });
+    } else {
+      ui.notifications?.warn('Unable to sync portrait changes without a GM online.');
+    }
+  }
+
+  _onRender(context, options) {
+    this._cacheElements();
+    this._attachEventListeners();
+    this._setupImage();
+    this._applyStateToDom();
+  }
+
+  async close(options = {}) {
+    this._detachEventListeners();
+    return super.close(options);
   }
 }
 
@@ -258,34 +869,59 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     const isGM = !!game.user.isGM;
     // Use temp state if available, else get from settings
     const state = window._fr_temp_state || getState();
+    if (!Array.isArray(state.customEntries)) {
+      state.customEntries = [];
+    }
     const players = (game.users?.contents ?? game.users).filter(u => !u.isGM);
+    const customEntries = state.customEntries;
+    const gmRecipients = [
+      ...players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isCustom: false,
+        isPlayer: true,
+        sharedToPlayers: false
+      })),
+      ...customEntries.map(entry => ({
+        id: entry.id,
+        name: entry.name,
+        isCustom: true,
+        isPlayer: false,
+        sharedToPlayers: !!entry.sharedToPlayers
+      }))
+    ];
 
     // Find active page
-    const activePage = state.pages.find(p => p.id === state.activePageId) || state.pages[0];
+    let activePage = state.pages.find(p => p.id === state.activePageId) || state.pages[0];
     // Defensive: if no page, create one
     if (!activePage) {
       const newPage = {
         id: foundry.utils.randomID(),
         name: "Factions",
         factions: [],
-        userRelations: {}
+        userRelations: {},
+        announcements: []
       };
       state.pages.push(newPage);
       state.activePageId = newPage.id;
       await saveState(state);
       // refetch state after save
+      const refreshed = getState();
+      window._fr_temp_state = refreshed;
       return this._prepareContext(options);
     }
 
     // Only use per-page data
     const gmFactions = activePage.factions.map(f => {
-      const cells = players.map(p => {
-        const value = (activePage.userRelations?.[p.id]?.[f.id]) ?? 0;
+      const imgConfig = normalizeImageConfig(f.imgConfig);
+      const cells = gmRecipients.map(recipient => {
+        const value = (activePage.userRelations?.[recipient.id]?.[f.id]) ?? 0;
         const clamped = Math.max(-50, Math.min(50, Number(value) || 0));
         const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
         
         return {
-          userId: p.id,
+          userId: recipient.id,
+          isCustom: recipient.isCustom,
           value: clamped,
           posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
           negWidth: (clamped < 0) ? Math.round(pct * 50) : 0
@@ -295,91 +931,243 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         id: f.id,
         name: f.name,
         img: f.img || "icons/svg/shield.svg",
-        persistOnZero: f.persistOnZero ?? true,
+        persistOnZero: !!f.persistOnZero,
         playerControlled: f.playerControlled ?? false,
         imgBgEnabled: f.imgBgEnabled ?? false,
         imgBgClass: f.imgBgClass || '',
+        imgScale: imgConfig.scale,
+        imgOffsetX: imgConfig.offsetX,
+        imgOffsetY: imgConfig.offsetY,
+        imgEditorSize: imgConfig.editorSize,
         cells
       };
     });
 
-    if (!isGM) {
-      // Player-only view: show tabs for pages where player has a value
-      const me = game.user;
-      // Always use the latest state for all pages
-      const playerPages = (state.pages || []).filter(page => {
-  // Show page if at least one faction for this player has value ≠ 0
-  // OR if any faction has persistOnZero true
-  if (!page.userRelations?.[me.id]) return false;
-  const factions = page.factions || [];
-  const hasNonZero = Object.values(page.userRelations[me.id]).some(v => Number(v) !== 0);
-  const hasPersist = factions.some(f => (f.persistOnZero ?? true));
-  // Show page if any faction for this player is nonzero, or any faction is set to persistOnZero
-  return hasNonZero || hasPersist;
-      });
-      // If no pages, show nothing
-      if (playerPages.length === 0) {
-        return { isGM, pages: [], activePageId: null, myFactions: [], pageName: null };
-      }
-      // Use activePageId if it's a valid player page, else first player page
-      let activePageId = state.activePageId;
-      if (!playerPages.some(p => p.id === activePageId)) {
-        activePageId = playerPages[0].id;
-      }
-      const activePage = playerPages.find(p => p.id === activePageId) || playerPages[0];
-      const myFactions = activePage.factions.map(f => {
-        const val = (activePage.userRelations?.[me.id]?.[f.id]) ?? 0;
-        const clamped = Math.max(-50, Math.min(50, Number(val) || 0));
-        const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
-        // Only show if value ≠ 0 or persistOnZero is true
-        if (clamped !== 0 || (f.persistOnZero ?? true)) {
-          return {
-            id: f.id,
-            name: f.name,
-            img: f.img || "icons/svg/shield.svg",
-            persistOnZero: f.persistOnZero ?? true,
-            playerControlled: f.playerControlled ?? false,
-            imgBgEnabled: f.imgBgEnabled ?? false,
-            imgBgClass: f.imgBgClass || '',
-            value: clamped,
-            posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
-            negWidth: (clamped < 0) ? Math.round(pct * 50) : 0
-          };
+    activePage.announcements ||= [];
+    const announcementTargets = activePage.factions.map(f => ({
+      id: f.id,
+      name: f.name
+    }));
+    const announcementAudienceOptions = [
+      { id: 'gm', name: 'GM' },
+      ...players.map(p => ({ id: p.id, name: p.name }))
+    ];
+    const userNameLookup = new Map([
+      ['gm', 'GM'],
+      ...players.map(p => [p.id, p.name])
+    ]);
+
+    const gmAnnouncements = activePage.announcements.map(announcement => {
+      const targetFaction = activePage.factions.find(f => f.id === announcement.factionId);
+      const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
+      const operatorSymbol = operatorKey === 'ge' ? '≥' : '≤';
+      const numericThreshold = Number(announcement.threshold);
+      const thresholdDisplay = Number.isFinite(numericThreshold) ? numericThreshold : (announcement.threshold ?? '');
+      const targets = Array.isArray(announcement.targets) && announcement.targets.length ? announcement.targets : ['gm'];
+      const targetNames = targets.map(t => userNameLookup.get(t) ?? 'Unknown');
+      const display = `${targetFaction?.name ?? 'Unknown Item'} ${operatorSymbol} ${thresholdDisplay} : ${announcement.message ?? ''}`.trim();
+      return {
+        id: announcement.id,
+        factionId: announcement.factionId,
+        factionName: targetFaction?.name ?? 'Unknown Item',
+        operatorKey,
+        operatorSymbol,
+        threshold: thresholdDisplay,
+        thresholdNumeric: Number.isFinite(numericThreshold) ? numericThreshold : null,
+        message: announcement.message ?? '',
+        targets,
+        targetNames,
+        targetSummary: targetNames.join(', '),
+        display
+      };
+    });
+
+    let announcementSelectedId = window._fr_lastAnnouncementSelectedId;
+    if (!gmAnnouncements.some(ann => ann.id === announcementSelectedId)) {
+      announcementSelectedId = gmAnnouncements[0]?.id ?? null;
+      window._fr_lastAnnouncementSelectedId = announcementSelectedId;
+    }
+
+    const gmAnnouncementAlerts = [];
+    for (const ann of gmAnnouncements) {
+      if (ann.thresholdNumeric === null) continue;
+      const hits = [];
+      for (const targetId of ann.targets) {
+        if (targetId === 'gm') continue;
+        const rawValue = activePage.userRelations?.[targetId]?.[ann.factionId];
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) continue;
+        const passes = ann.operatorKey === 'ge' ? value >= ann.thresholdNumeric : value <= ann.thresholdNumeric;
+        if (passes) {
+          hits.push({ targetId, value });
         }
-        return null;
-      }).filter(f => f !== null);
-      // Return only player-relevant pages and activePageId
+      }
+      if (!hits.length) continue;
+      const detailText = hits.map(hit => {
+        const name = userNameLookup.get(hit.targetId) ?? 'Unknown';
+        return `${name} (${hit.value})`;
+      }).join(', ');
+      gmAnnouncementAlerts.push({
+        id: ann.id,
+        display: ann.display,
+        details: detailText ? `Triggered by: ${detailText}` : ''
+      });
+    }
+
+    if (!isGM) {
+      const me = game.user;
+      const playerPages = getPlayerVisiblePages(state, me.id);
+      const sharedEntries = customEntries.filter(entry => entry.sharedToPlayers);
+      const sharedCustomViews = sharedEntries.map(entry => {
+        const pages = state.pages.map(page => {
+          const factions = page.factions.map(f => buildFactionDisplay(page, entry.id, f)).filter(Boolean);
+          if (factions.length === 0) return null;
+          return {
+            id: page.id,
+            name: page.name,
+            factions
+          };
+        }).filter(Boolean);
+        return {
+          id: entry.id,
+          name: entry.name,
+          pages
+        };
+      }).filter(Boolean);
+
+      const playerTabs = [
+        ...playerPages.map(page => ({
+          key: `page:${page.id}`,
+          type: 'page',
+          id: page.id,
+          name: page.name
+        })),
+        ...sharedCustomViews.map(view => ({
+          key: `custom:${view.id}`,
+          type: 'custom',
+          id: view.id,
+          name: view.name
+        }))
+      ];
+
+      let activeTabKey = window._fr_player_activeTab;
+      if (!playerTabs.some(tab => tab.key === activeTabKey)) {
+        activeTabKey = playerTabs[0]?.key ?? null;
+        window._fr_player_activeTab = activeTabKey;
+      }
+
+      const activeTab = playerTabs.find(tab => tab.key === activeTabKey) || null;
+      let activeTabType = activeTab?.type ?? null;
+      let activePageId = null;
+      let pageName = null;
+      let myFactions = [];
+      let activeCustomEntryId = null;
+      let customSubTabs = [];
+      let customActivePage = null;
+      let announcementAlerts = [];
+
+      if (activeTabType === 'page') {
+        activePageId = activeTab.id;
+        const activePlayerPage = playerPages.find(p => p.id === activePageId) || playerPages[0] || null;
+        if (activePlayerPage) {
+          pageName = activePlayerPage.name;
+          myFactions = activePlayerPage.factions.map(f => buildFactionDisplay(activePlayerPage, me.id, f)).filter(Boolean);
+          activePageId = activePlayerPage.id;
+          const basePage = state.pages.find(p => p.id === activePlayerPage.id);
+          if (basePage?.announcements?.length) {
+            for (const announcement of basePage.announcements) {
+              const targets = Array.isArray(announcement.targets) && announcement.targets.length ? announcement.targets : ['gm'];
+              if (!targets.includes(me.id)) continue;
+              const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
+              const operatorSymbol = operatorKey === 'ge' ? '≥' : '≤';
+              const thresholdNumeric = Number(announcement.threshold);
+              if (!Number.isFinite(thresholdNumeric)) continue;
+              const faction = basePage.factions.find(f => f.id === announcement.factionId);
+              if (!faction) continue;
+              const rawValue = basePage.userRelations?.[me.id]?.[announcement.factionId];
+              const value = Number(rawValue);
+              if (!Number.isFinite(value)) continue;
+              const passes = operatorKey === 'ge' ? value >= thresholdNumeric : value <= thresholdNumeric;
+              if (!passes) continue;
+              if (announcement.dismissedBy?.[me.id]) continue;
+              const message = `${faction.name} ${operatorSymbol} ${thresholdNumeric} : ${announcement.message ?? ''}`.trim();
+              announcementAlerts.push({
+                id: announcement.id,
+                display: message,
+                value,
+                pageId: basePage.id
+              });
+            }
+          }
+        } else {
+          activePageId = null;
+        }
+        window._fr_custom_activeEntryId = null;
+      } else if (activeTabType === 'custom') {
+        activeCustomEntryId = activeTab.id;
+        window._fr_custom_activeEntryId = activeCustomEntryId;
+        const activeView = sharedCustomViews.find(view => view.id === activeCustomEntryId) || null;
+        const pageMap = window._fr_custom_activePageMap || {};
+        if (activeView) {
+          let activeCustomPageId = pageMap[activeCustomEntryId];
+          if (!activeView.pages.some(p => p.id === activeCustomPageId)) {
+            activeCustomPageId = activeView.pages[0]?.id ?? null;
+            window._fr_custom_activePageMap[activeCustomEntryId] = activeCustomPageId;
+          }
+          customSubTabs = activeView.pages.map(page => ({
+            id: page.id,
+            name: page.name,
+            isActive: page.id === activeCustomPageId
+          }));
+          customActivePage = activeView.pages.find(page => page.id === activeCustomPageId) || null;
+        }
+      } else {
+        window._fr_custom_activeEntryId = null;
+      }
+
       return {
         isGM,
         pages: playerPages,
+        playerTabs,
+        activeTabKey,
+        activeTabType,
         activePageId,
         myFactions,
-        pageName: activePage.name,
+        pageName,
+        activeCustomEntryId,
+        customSubTabs,
+        customActivePage,
+        announcementAlerts,
         backgroundOptions: [
           { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
           { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
-            { class: 'fr-bg-gradient-purple', label: 'Purple Gradient' },
-            { class: 'fr-bg-gradient-forest', label: 'Forest Gradient' },
-            { class: 'fr-bg-gradient-fire', label: 'Fire Gradient' },
-            { class: 'fr-bg-solid-red', label: 'Solid Red' },
-            { class: 'fr-bg-solid-blue', label: 'Solid Blue' },
-            { class: 'fr-bg-solid-green', label: 'Solid Green' },
-            { class: 'fr-bg-solid-gold', label: 'Solid Gold' },
-            { class: 'fr-bg-solid-black', label: 'Solid Black' },
-            { class: 'fr-bg-solid-purple', label: 'Solid Purple' }
+          { class: 'fr-bg-gradient-purple', label: 'Purple Gradient' },
+          { class: 'fr-bg-gradient-forest', label: 'Forest Gradient' },
+          { class: 'fr-bg-gradient-fire', label: 'Fire Gradient' },
+          { class: 'fr-bg-solid-red', label: 'Solid Red' },
+          { class: 'fr-bg-solid-blue', label: 'Solid Blue' },
+          { class: 'fr-bg-solid-green', label: 'Solid Green' },
+          { class: 'fr-bg-solid-gold', label: 'Solid Gold' },
+          { class: 'fr-bg-solid-black', label: 'Solid Black' },
+          { class: 'fr-bg-solid-purple', label: 'Solid Purple' }
         ]
       };
     }
 
     // GM view includes players list, faction x player matrix, and all pages for tabs
-    const gmPlayers = players.map(p => ({ id: p.id, name: p.name }));
     return {
       isGM,
-      players: gmPlayers,
+      recipients: gmRecipients,
       factions: gmFactions,
       pages: state.pages,
       activePageId: state.activePageId,
       pageName: activePage.name,
+      announcementTargets,
+      announcementAudienceOptions,
+      announcementSavedList: gmAnnouncements,
+  announcementSelectedId,
+      gmAnnouncementAlerts,
+      hasCustomEntries: customEntries.length > 0,
       backgroundOptions: [
         { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
         { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
@@ -402,11 +1190,13 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     
     // Player: Up/down arrow handlers for playerControlled items
     $html.find('.fr-arrow-up').on('click', async (ev) => {
-      const fid = ev.currentTarget.dataset.fid;
+      const button = ev.currentTarget;
+      const fid = button.dataset.fid;
       const state = window._fr_temp_state || getState();
       const me = game.user;
+      const pageId = button.dataset.pageid || state.activePageId;
       // Find active page and faction
-      const page = (state.pages || []).find(p => p.id === state.activePageId);
+      const page = (state.pages || []).find(p => p.id === pageId);
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction || !faction.playerControlled) return;
@@ -415,6 +1205,9 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       let v = Number(page.userRelations[me.id][fid]) || 0;
       v = Math.min(50, v + 1);
       page.userRelations[me.id][fid] = v;
+      if (pageId) {
+        state.activePageId = pageId;
+      }
       
       // Save state to settings (if GM) or sync to GM
       if (game.user.isGM) {
@@ -427,7 +1220,8 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           game.bagOfListsSocket.executeAsGM('playerValueChange', {
             factionId: fid,
             userId: me.id,
-            newValue: v
+            newValue: v,
+            pageId
           });
         }
       }
@@ -435,13 +1229,73 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       window._fr_temp_state = state;
       this.render(true);
     });
+    // --- Dropdown portaling for color picker in table view ---
+    // Only apply in GM/table view
+    if ($html.find('.fr-table-container').length) {
+      $html.find('.fr-bg-selector').off('click').on('click', function (e) {
+        e.stopPropagation();
+        const button = this;
+        // Close any open dropdowns first
+        $('.fr-bg-dropdown.open').each((_, el) => {
+          $(el).find('.fr-bg-dropdown-content').css('display', '');
+        });
+        $('.fr-bg-dropdown.open').removeClass('open');
+        $('.fr-bg-dropdown-portal').remove();
+        // Open the dropdown
+        const dropdown = $(button).siblings('.fr-bg-dropdown-content').first();
+        if (!dropdown.length) return;
+        // Portal the dropdown to the closest .fr-table-container
+        let tableContainer = button.closest('.fr-table-container');
+        if (!tableContainer) tableContainer = document.body;
+        // Clone the dropdown for portaling
+        const portalDropdown = dropdown.clone(true, true).addClass('fr-bg-dropdown-portal');
+        // Remove any existing portal dropdowns
+        $(tableContainer).find('.fr-bg-dropdown-portal').remove();
+        const restoreOriginal = () => {
+          dropdown.css('display', '');
+        };
+        dropdown.css('display', 'none');
+        // Calculate position
+        const containerRect = tableContainer.getBoundingClientRect();
+        const btnRect = button.getBoundingClientRect();
+        const top = btnRect.top - containerRect.top + tableContainer.scrollTop + button.offsetHeight;
+        const left = btnRect.left - containerRect.left + tableContainer.scrollLeft;
+        portalDropdown.css({
+          position: 'absolute',
+          top: top + 'px',
+          left: left + 'px',
+          zIndex: 20000,
+          minWidth: dropdown.outerWidth() + 'px',
+          display: 'block'
+        });
+        $(tableContainer).append(portalDropdown);
+        // Mark as open for styling
+        $(button).closest('.fr-bg-dropdown').addClass('open');
+        // Close on click outside
+        $(document).one('mousedown.fr-bg-dropdown', function (evt) {
+          if (!portalDropdown[0].contains(evt.target) && !button.contains(evt.target)) {
+            restoreOriginal();
+            portalDropdown.remove();
+            $(button).closest('.fr-bg-dropdown').removeClass('open');
+          }
+        });
+        // Handle option click
+        portalDropdown.find('.fr-bg-option').on('click', function () {
+          restoreOriginal();
+          portalDropdown.remove();
+          $(button).closest('.fr-bg-dropdown').removeClass('open');
+        });
+      });
+    }
 
     $html.find('.fr-arrow-down').on('click', async (ev) => {
-      const fid = ev.currentTarget.dataset.fid;
+      const button = ev.currentTarget;
+      const fid = button.dataset.fid;
       const state = window._fr_temp_state || getState();
       const me = game.user;
+      const pageId = button.dataset.pageid || state.activePageId;
       // Find active page and faction
-      const page = (state.pages || []).find(p => p.id === state.activePageId);
+      const page = (state.pages || []).find(p => p.id === pageId);
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction || !faction.playerControlled) return;
@@ -450,6 +1304,9 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       let v = Number(page.userRelations[me.id][fid]) || 0;
       v = Math.max(-50, v - 1);
       page.userRelations[me.id][fid] = v;
+      if (pageId) {
+        state.activePageId = pageId;
+      }
       
       // Save state to settings (if GM) or sync to GM
       if (game.user.isGM) {
@@ -462,13 +1319,74 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           game.bagOfListsSocket.executeAsGM('playerValueChange', {
             factionId: fid,
             userId: me.id,
-            newValue: v
+            newValue: v,
+            pageId
           });
         }
       }
       
       window._fr_temp_state = state;
       this.render(true);
+    });
+
+    $html.find('.fr-announcement-dismiss').on('click', async (ev) => {
+      ev.preventDefault();
+      const button = ev.currentTarget;
+      const announcementId = button.dataset.announcementId;
+      const pageId = button.dataset.pageid;
+      if (!announcementId || !pageId) return;
+      const currentUserId = game.user.id;
+
+      if (game.user.isGM) {
+        const state = getState();
+        const page = state.pages.find(p => p.id === pageId);
+        if (!page) return;
+        const announcement = page.announcements?.find?.(ann => ann.id === announcementId);
+        if (!announcement) return;
+        announcement.dismissedBy ||= {};
+        if (currentUserId !== 'gm') {
+          announcement.dismissedBy[currentUserId] = true;
+        }
+        resetAnnouncementDismissalsForPage(page);
+        await saveState(state);
+        const latestState = getState();
+        window._fr_temp_state = latestState;
+        this.render(true);
+        return;
+      }
+
+      const hasSocket = !!game.bagOfListsSocket;
+      if (hasSocket) {
+        button.disabled = true;
+      }
+
+      const localState = window._fr_temp_state;
+      const localPage = localState?.pages?.find?.(p => p.id === pageId);
+      const localAnnouncement = localPage?.announcements?.find?.(ann => ann.id === announcementId);
+      if (localAnnouncement) {
+        localAnnouncement.dismissedBy ||= {};
+        localAnnouncement.dismissedBy[currentUserId] = true;
+      }
+      this.render(true);
+
+      if (hasSocket) {
+        try {
+          await game.bagOfListsSocket.executeAsGM('playerDismissAnnouncement', {
+            announcementId,
+            pageId,
+            userId: currentUserId
+          });
+        } catch (err) {
+          logError('playerDismissAnnouncement failed', err);
+          ui.notifications?.error?.('Failed to dismiss announcement. Please try again.');
+        } finally {
+          if (button.isConnected) {
+            button.disabled = false;
+          }
+        }
+      } else {
+        ui.notifications?.warn?.('Dismissal did not reach the GM—socket connection unavailable.');
+      }
     });
     // GM: Toggle playerControlled for a faction
     $html.find('.fr-player-control').on('change', async (ev) => {
@@ -494,6 +1412,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.off('keydown', '.fr-val');
     $html.off('keydown', '#fr-new-name');
     $html.off('keydown', '.fr-rename-input');
+    $html.off('keydown', '#fr-new-custom-name');
     $html.find('.fr-tab').off('click');
     $html.find('#fr-add-page').off('click');
     $html.find('.fr-rename-page').off('click');
@@ -502,9 +1421,21 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.find('#fr-del-page').off('click');
     $html.find('#fr-add').off('click');
     $html.find('#fr-new-name').off('keydown');
+    $html.find('#fr-add-custom').off('click');
+  $html.find('#fr-announcement-operator').off('click');
+  $html.find('#fr-announcement-add').off('click');
+  $html.find('#fr-announcement-message').off('keydown');
+  $html.find('#fr-announcement-threshold').off('keydown');
+  $html.find('#fr-announcement-recipients').off('change');
+    $html.find('#fr-announcement-saved').off('change');
+    $html.find('#fr-announcement-delete').off('click');
     $html.find('.fr-del').off('click');
-    $html.find('.fr-img').off('click');
+    $html.find('.fr-del-custom').off('click');
+  $html.find('.fr-img').off('click');
+  $html.find('.fr-img-edit').off('click');
     $html.find('.fr-val').off('change blur');
+    $html.find('.fr-share-custom').off('click');
+    $html.find('.fr-custom-subtab').off('click');
 
       // GM: Toggle persistOnZero for an item
       $html.find('.fr-persist').on('change', async (ev) => {
@@ -546,6 +1477,55 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       }
     });
 
+    $html.find('.fr-del-custom').on('click', async (ev) => {
+      if (!game.user.isGM) return;
+      ev.preventDefault();
+      const customId = ev.currentTarget.dataset.customid;
+      if (!customId) return;
+      const state = getState();
+      state.customEntries ||= [];
+      const index = state.customEntries.findIndex(entry => entry.id === customId);
+      if (index === -1) return;
+      state.customEntries.splice(index, 1);
+      for (const page of state.pages ?? []) {
+        if (page.userRelations?.[customId]) {
+          delete page.userRelations[customId];
+        }
+      }
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      if (window._fr_custom_activeEntryId === customId) {
+        const sharedEntries = latestState.customEntries?.filter(entry => entry.sharedToPlayers) ?? [];
+        window._fr_custom_activeEntryId = sharedEntries[0]?.id ?? null;
+      }
+      this.render(true);
+    });
+
+    $html.find('.fr-share-custom').on('click', async (ev) => {
+      if (!game.user.isGM) return;
+      ev.preventDefault();
+      const customId = ev.currentTarget.dataset.customid;
+      if (!customId) return;
+      const state = getState();
+      state.customEntries ||= [];
+      const entry = state.customEntries.find(e => e.id === customId);
+      if (!entry) return;
+      const originalShared = !!entry.sharedToPlayers;
+      const nextShared = !originalShared;
+      entry.sharedToPlayers = nextShared;
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      const sharedEntries = latestState.customEntries?.filter(e => e.sharedToPlayers) ?? [];
+      if (!nextShared && window._fr_custom_activeEntryId === customId) {
+        window._fr_custom_activeEntryId = sharedEntries[0]?.id ?? null;
+      } else if (nextShared && !window._fr_custom_activeEntryId) {
+        window._fr_custom_activeEntryId = customId;
+      }
+      this.render(true);
+    });
+
     // Pressing Enter in .fr-val input triggers blur/submit
     $html.on('keydown', '.fr-val', function(ev) {
       if (ev.key === 'Enter') {
@@ -570,8 +1550,21 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
 
     // Tab switching
     $html.find('.fr-tab').on('click', async (ev) => {
+      const tabType = ev.currentTarget.dataset.type || 'page';
       const pageId = ev.currentTarget.dataset.pageid;
+      const customId = ev.currentTarget.dataset.customid;
       const isGM = !!game.user.isGM;
+
+      if (!isGM && tabType === 'custom') {
+        if (!customId) return;
+        window._fr_player_activeTab = `custom:${customId}`;
+        window._fr_custom_activeEntryId = customId;
+        this.render(true);
+        return;
+      }
+
+      if (!pageId) return;
+
       if (isGM) {
         // GM updates global state
         const state = getState();
@@ -584,24 +1577,24 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           this.render(true);
         }
       } else {
-        // Player: update only local UI, ensure valid pages array
-        const state = window._fr_temp_state || {};
         const me = game.user;
-        // Filter pages for player
-        const playerPages = (state.pages || getState().pages || []).filter(page => {
-          if (!page.userRelations?.[me.id]) return false;
-          return Object.values(page.userRelations[me.id]).some(v => Number(v) !== 0);
-        });
+        const baseState = window._fr_temp_state || getState();
+        const playerPages = getPlayerVisiblePages(baseState, me.id);
         if (playerPages.length === 0) {
-          window._fr_temp_state = { pages: [], activePageId: null };
+          window._fr_temp_state = { ...baseState, activePageId: null };
+          window._fr_player_activeTab = null;
           this.render(true);
           return;
         }
+        const nextActiveId = playerPages.some(p => p.id === pageId)
+          ? pageId
+          : playerPages[0].id;
         window._fr_temp_state = {
-          ...state,
-          pages: playerPages,
-          activePageId: pageId
+          ...baseState,
+          activePageId: nextActiveId
         };
+        window._fr_player_activeTab = `page:${nextActiveId}`;
+        window._fr_custom_activeEntryId = null;
         this.render(true);
       }
     });
@@ -612,7 +1605,8 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         id: foundry.utils.randomID(),
         name: `Tracker ${state.pages.length + 1}`,
         factions: [],
-        userRelations: {}
+        userRelations: {},
+        announcements: []
       };
       log('info', 'Adding new page', newPage);
       state.pages.push(newPage);
@@ -636,6 +1630,182 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         }
       }, 50);
     }
+
+    const addCustomEntry = async () => {
+      if (!game.user.isGM) return;
+      const nameInput = $html.find('#fr-new-custom-name')[0];
+      const name = nameInput?.value?.trim();
+      if (!name) {
+        return ui.notifications?.warn('Enter a custom entry name.');
+      }
+      const state = getState();
+      state.customEntries ||= [];
+      const newEntry = {
+        id: `custom-${foundry.utils.randomID()}`,
+        name,
+        sharedToPlayers: false
+      };
+      state.customEntries.push(newEntry);
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      if (nameInput) nameInput.value = '';
+      this.render(true);
+    };
+
+    $html.find('#fr-add-custom').on('click', (ev) => {
+      ev.preventDefault();
+      addCustomEntry();
+    });
+    $html.find('#fr-new-custom-name').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        addCustomEntry();
+      }
+    });
+
+    const recipientsSelectEl = $html.find('#fr-announcement-recipients')[0];
+    if (recipientsSelectEl) {
+      const lastRecipients = Array.isArray(window._fr_lastAnnouncementRecipients) && window._fr_lastAnnouncementRecipients.length
+        ? window._fr_lastAnnouncementRecipients
+        : ['gm'];
+      const allowedValues = new Set(Array.from(recipientsSelectEl.options).map(opt => opt.value));
+      const appliedValues = lastRecipients.filter(value => allowedValues.has(value));
+      const selectionSet = new Set(appliedValues.length ? appliedValues : ['gm']);
+      for (const option of recipientsSelectEl.options) {
+        option.selected = selectionSet.has(option.value);
+      }
+      window._fr_lastAnnouncementRecipients = Array.from(selectionSet);
+      $html.find('#fr-announcement-recipients').on('change', (ev) => {
+        const select = ev.currentTarget;
+        window._fr_lastAnnouncementRecipients = Array.from(select.selectedOptions).map(opt => opt.value);
+      });
+    }
+
+    $html.find('#fr-announcement-operator').on('click', (ev) => {
+      const button = ev.currentTarget;
+      const current = button.dataset.operator === 'ge' ? 'ge' : 'le';
+      const next = current === 'le' ? 'ge' : 'le';
+      button.dataset.operator = next;
+      button.textContent = next === 'ge' ? '≥' : '≤';
+    });
+
+    const addAnnouncement = async () => {
+      if (!game.user.isGM) return;
+      await this._commitPendingFactionValues($html);
+      const selectEl = $html.find('#fr-announcement-target')[0];
+      const recipientsSelect = $html.find('#fr-announcement-recipients')[0];
+      const thresholdInput = $html.find('#fr-announcement-threshold')[0];
+      const messageInput = $html.find('#fr-announcement-message')[0];
+      const operatorButton = $html.find('#fr-announcement-operator')[0];
+      const factionId = selectEl?.value;
+      const operator = operatorButton?.dataset.operator === 'ge' ? 'ge' : 'le';
+      const thresholdValueRaw = thresholdInput?.value ?? '';
+      const thresholdValue = typeof thresholdValueRaw === 'string' ? thresholdValueRaw.trim() : String(thresholdValueRaw ?? '');
+      if (thresholdValue === '') {
+        return ui.notifications?.warn('Enter a numeric threshold for the announcement.');
+      }
+      const threshold = Number(thresholdValue);
+      const message = messageInput?.value?.trim() ?? '';
+      const targets = Array.from(recipientsSelect?.selectedOptions ?? []).map(opt => opt.value);
+
+      if (!factionId) {
+        return ui.notifications?.warn('Select an item to watch before adding an announcement.');
+      }
+      if (!Number.isFinite(threshold)) {
+        return ui.notifications?.warn('Enter a numeric threshold for the announcement.');
+      }
+      if (!message) {
+        return ui.notifications?.warn('Add a short message so players know what the alert means.');
+      }
+      if (!targets.length) {
+        return ui.notifications?.warn('Select at least one recipient for the announcement.');
+      }
+
+  const state = getState();
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) {
+        return ui.notifications?.error('Unable to find the active tracker page for this announcement.');
+      }
+      page.announcements ||= [];
+      const newAnnouncementId = `announcement-${foundry.utils.randomID()}`;
+      page.announcements.push({
+        id: newAnnouncementId,
+        factionId,
+        operator,
+        threshold,
+        message,
+        targets,
+        dismissedBy: {}
+      });
+
+      window._fr_lastAnnouncementRecipients = targets.slice();
+      window._fr_lastAnnouncementSelectedId = newAnnouncementId;
+
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      if (messageInput) messageInput.value = '';
+      if (thresholdInput) thresholdInput.value = '';
+      this.render(true);
+    };
+
+    $html.find('#fr-announcement-add').on('click', (ev) => {
+      ev.preventDefault();
+      addAnnouncement();
+    });
+
+    $html.find('#fr-announcement-message').on('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        addAnnouncement();
+      }
+    });
+
+    $html.find('#fr-announcement-threshold').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        addAnnouncement();
+      }
+    });
+
+    const refreshAnnouncementControls = () => {
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const deleteBtn = $html.find('#fr-announcement-delete')[0];
+      if (!deleteBtn) return;
+      const hasValidOption = !!(selectEl && selectEl.value);
+      deleteBtn.disabled = !hasValidOption;
+    };
+
+    refreshAnnouncementControls();
+
+    $html.find('#fr-announcement-saved').on('change', (ev) => {
+      const select = ev.currentTarget;
+      window._fr_lastAnnouncementSelectedId = select?.value || null;
+      refreshAnnouncementControls();
+    });
+
+    $html.find('#fr-announcement-delete').on('click', async (ev) => {
+      if (!game.user.isGM) return;
+      ev.preventDefault();
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const announcementId = selectEl?.value;
+      if (!announcementId) {
+        return ui.notifications?.warn('Select a saved announcement before deleting.');
+      }
+      const state = getState();
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page?.announcements) return;
+      const index = page.announcements.findIndex(a => a.id === announcementId);
+      if (index === -1) return;
+      page.announcements.splice(index, 1);
+  const nextSelection = page.announcements[index] ?? page.announcements[index - 1] ?? null;
+  window._fr_lastAnnouncementSelectedId = nextSelection?.id ?? null;
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      this.render(true);
+    });
 
     // Rename page
     $html.find('.fr-rename-page').on('click', function(ev) {
@@ -705,13 +1875,13 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const nameInput = $html.find('#fr-new-name')[0];
       const name = nameInput?.value?.trim();
       log('info', 'Add faction clicked', { name });
-      if (!name) return ui.notifications?.warn('Enter a faction name.');
+  if (!name) return ui.notifications?.warn('Enter an item name.');
       // Always fetch latest state from settings
       const state = getState();
       const page = state.pages.find(p => p.id === state.activePageId);
       if (page) {
-        // Default persistOnZero to true (can be changed by GM)
-        page.factions.push({ id: foundry.utils.randomID(), name, img: 'icons/svg/shield.svg', persistOnZero: true, playerControlled: false });
+  // Default persistOnZero to false (GM can enable per item)
+  page.factions.push({ id: foundry.utils.randomID(), name, img: 'icons/svg/shield.svg', persistOnZero: false, playerControlled: false, imgConfig: defaultImageConfig() });
         await saveState(state);
         // Fetch latest state and use for next render
         const latestState = getState();
@@ -740,6 +1910,9 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         page.factions = page.factions.filter(f => f.id !== fid);
         for (const uid of Object.keys(page.userRelations ?? {})) {
           if (page.userRelations[uid]) delete page.userRelations[uid][fid];
+        }
+        if (Array.isArray(page.announcements)) {
+          page.announcements = page.announcements.filter(a => a.factionId !== fid);
         }
         await saveState(state);
         // Fetch latest state and use for next render
@@ -808,30 +1981,68 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.find('.fr-bg-selector').off('click').on('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      const dd = ev.currentTarget.closest('.fr-bg-dropdown');
-      if (!dd) return;
-      // Close others first
-      $html.find('.fr-bg-dropdown.open').not(dd).each((_, el) => {
-        el.classList.remove('open');
-        const card = el.closest('.fr-card');
-        if (card) card.classList.remove('fr-dropdown-active');
+      const button = ev.currentTarget;
+      // Close any open dropdowns first
+      $('.fr-bg-dropdown.open').each((_, el) => {
+        $(el).find('.fr-bg-dropdown-content').css('display', '');
       });
-      const willOpen = !dd.classList.contains('open');
-      dd.classList.toggle('open');
-      const parentCard = dd.closest('.fr-card');
-      if (parentCard) {
-        if (willOpen) parentCard.classList.add('fr-dropdown-active');
-        else parentCard.classList.remove('fr-dropdown-active');
-      }
+      $('.fr-bg-dropdown.open').removeClass('open');
+      $('.fr-bg-dropdown-portal').remove();
+      // Open the dropdown
+      const dropdown = $(button).siblings('.fr-bg-dropdown-content').first();
+      if (!dropdown.length) return;
+      // Portal the dropdown to the closest .fr-table-container
+      let tableContainer = button.closest('.fr-table-container');
+      if (!tableContainer) tableContainer = document.body;
+      // Clone the dropdown for portaling
+      const portalDropdown = dropdown.clone(true, true).addClass('fr-bg-dropdown-portal');
+      // Remove any existing portal dropdowns
+      $(tableContainer).find('.fr-bg-dropdown-portal').remove();
+      const restoreOriginal = () => {
+        dropdown.css('display', '');
+      };
+      dropdown.css('display', 'none');
+      // Calculate position
+      const containerRect = tableContainer.getBoundingClientRect();
+      const btnRect = button.getBoundingClientRect();
+      const top = btnRect.top - containerRect.top + tableContainer.scrollTop + button.offsetHeight;
+      const left = btnRect.left - containerRect.left + tableContainer.scrollLeft;
+      portalDropdown.css({
+        position: 'absolute',
+        top: top + 'px',
+        left: left + 'px',
+        zIndex: 20000,
+        minWidth: dropdown.outerWidth() + 'px',
+        display: 'block'
+      });
+      $(tableContainer).append(portalDropdown);
+      // Mark as open for styling
+      $(button).closest('.fr-bg-dropdown').addClass('open');
+      // Close on click outside
+      $(document).one('mousedown.fr-bg-dropdown', function (evt) {
+        if (!portalDropdown[0].contains(evt.target) && !button.contains(evt.target)) {
+          restoreOriginal();
+          portalDropdown.remove();
+          $(button).closest('.fr-bg-dropdown').removeClass('open');
+        }
+      });
+      // Handle option click
+      portalDropdown.find('.fr-bg-option').on('click', function () {
+        restoreOriginal();
+        portalDropdown.remove();
+        $(button).closest('.fr-bg-dropdown').removeClass('open');
+      });
     });
     // Global outside click to close
     $(document).off('click.bol-bg').on('click.bol-bg', (ev) => {
       if (!ev.target.closest('.fr-bg-dropdown')) {
         $html.find('.fr-bg-dropdown.open').each((_, el) => {
           el.classList.remove('open');
+          $(el).find('.fr-bg-dropdown-content').css('display', '');
           const card = el.closest('.fr-card');
           if (card) card.classList.remove('fr-dropdown-active');
         });
+        $('.fr-bg-dropdown-portal').remove();
       }
     });
 
@@ -848,12 +2059,35 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           const f = page?.factions.find(x => x.id === fid);
           if (f) {
             f.img = path;
+            f.imgConfig = defaultImageConfig();
             await saveState(state);
             this.render(true);
           }
         }
       });
       fp.render(true);
+    });
+
+    $html.find('.fr-img-edit').on('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const fid = ev.currentTarget.dataset.fid;
+      const pageId = ev.currentTarget.dataset.pageid || window._fr_temp_state?.activePageId || getState().activePageId;
+      if (!fid) return;
+      const state = window._fr_temp_state || getState();
+      const page = state.pages?.find?.(p => p.id === pageId) || state.pages?.find?.(p => p.id === state.activePageId);
+      const faction = page?.factions?.find?.(f => f.id === fid);
+      if (!page || !faction) return;
+      const imgConfig = normalizeImageConfig(faction.imgConfig);
+      const imgSrc = faction.img || 'icons/svg/shield.svg';
+      const editor = new PortraitEditorApp({
+        pageId: page.id,
+        factionId: fid,
+        imgSrc,
+        imgConfig,
+        parentApp: this
+      });
+      editor.render(true);
     });
 
     // Value changes (-50..+50) for active page
@@ -871,6 +2105,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         page.userRelations ||= {};
         page.userRelations[uid] ||= {};
         page.userRelations[uid][fid] = v;
+        resetAnnouncementDismissalsForPage(page);
         await saveState(state);
         // Fetch latest state and use for next render
         const latestState = getState();
@@ -885,6 +2120,56 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
 
     // Initialize drag and drop functionality
     this._initializeDragAndDrop($html);
+
+    $html.find('.fr-custom-subtab').on('click', (ev) => {
+      const customId = ev.currentTarget.dataset.customid;
+      const pageId = ev.currentTarget.dataset.pageid;
+      if (!customId || !pageId) return;
+      if (!window._fr_custom_activePageMap || typeof window._fr_custom_activePageMap !== 'object') {
+        window._fr_custom_activePageMap = {};
+      }
+      if (window._fr_custom_activePageMap[customId] === pageId) return;
+      window._fr_custom_activePageMap[customId] = pageId;
+      this.render(true);
+    });
+
+    applyImageTransforms(this.element);
+  }
+
+  async _commitPendingFactionValues($html) {
+    if (!game.user.isGM) return;
+    if (!$html) return;
+    const state = getState();
+    const page = state.pages.find(p => p.id === state.activePageId);
+    if (!page) return;
+    let dirty = false;
+    const inputs = $html.find('.fr-val');
+    inputs.each((_, element) => {
+      const input = element;
+      const fid = input.dataset.fid;
+      const uid = input.dataset.uid;
+      if (!fid || !uid) return;
+      const domNumber = Number(input.value);
+      if (!Number.isFinite(domNumber)) return;
+      const sanitized = Math.max(-50, Math.min(50, Math.round(domNumber)));
+      if (String(sanitized) !== input.value) {
+        input.value = String(sanitized);
+      }
+      page.userRelations ||= {};
+      page.userRelations[uid] ||= {};
+      const existingRaw = page.userRelations[uid][fid];
+      const existing = Number(existingRaw);
+      if (!Number.isFinite(existing) || existing !== sanitized) {
+        page.userRelations[uid][fid] = sanitized;
+        dirty = true;
+      }
+    });
+    if (dirty) {
+      resetAnnouncementDismissalsForPage(page);
+      await saveState(state);
+      const latest = getState();
+      window._fr_temp_state = latest;
+    }
   }
 
   /** 

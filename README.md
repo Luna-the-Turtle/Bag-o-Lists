@@ -5,7 +5,7 @@ This module is licensed under a [Creative Commons Attribution-NonCommercial 4.0 
 This work is also subject to the [Foundry Virtual Tabletop EULA - Limited License Agreement for module development](https://foundryvtt.com/article/license/).
 
 ## Description
-A Foundry VTT module that allows the user to create sharable lists between the GM and Player. Custom images can be used for Item Portraits and using socketLib has real-time updating.
+A Foundry VTT module for tracking and sharing customizable lists such as factions, resources, reputations, or crafting supplies between the GM and players. Bag o' Lists lets you track values for each player or NPC, update everything in real time with socketlib, and use a flexible interface with custom images, backgrounds, and a portrait editor. GMs can create multiple bags (tabs), add items with unique images, choose whether items are player-controlled or GM-only, and set items to stay visible or disappear at zero. The module includes an announcement system for alerts based on item values, supports custom recipient tabs, and makes it easy to share information between player and GM. All changes are synchronized instantly for everyone, making it useful for campaign management, reputation tracking, or any game that needs interactive lists.
 
 ## About & Motivation
 
@@ -33,10 +33,13 @@ Thank you again so much for everyone creating and adding to the community, as we
 	- For each item, toggle:
 	  - **Persist @ 0:** If checked, item remains visible to players at zero value.
 	  - **Player Controlled:** If checked, players can adjust the value themselves.
+	- Add **Custom Entries** to track NPCs or groups alongside players; a Share toggle promotes them to a dedicated player-facing tab.
+	- Queue **Announcements** beneath the custom entry panel to track item thresholds (≤/≥), choose one or more recipients (players and/or GM), save the reminder, and reuse or delete it from a compact dropdown.
 
 4. **Player Controls:**
 	- Players see only the bags and items relevant to them.
 	- If "Player Controlled" is enabled for an item, players can use up/down arrows to adjust its value.
+	- When the GM shares a custom entry, players gain a dedicated tab with page subtabs that aggregate that entry's values across every shared bag.
 
 5. **Real-Time Sync:**
 	- All changes are synced instantly to all users via socketlib.
@@ -48,10 +51,18 @@ Thank you again so much for everyone creating and adding to the community, as we
 - GM and player views: GMs see all data and controls, players see only their relevant info.
 - Items can disappear at zero or persist, based on GM setting (great for tracking expendable or craftable resources).
 - Player-controlled items: allow players to adjust values directly.
+- Custom recipients: create NPCs, factions, or friendlies as "players" the GM can update, then broadcast their standing to real players through shared tabs with per-page subtabs.
+- Announcement triggers: store per-page reminders that watch any item in the tracker, target specific players/the GM, and surface the alert automatically to everyone selected once the value crosses the ≤/≥ threshold.
+- WYSIWYG portrait editor: zoom and reposition images inside a live 1:1 preview so the table portrait always matches what you see in the editor.
 - Real-time updates for all users using socketlib.
 
 ## Support
 For questions, feature requests or bug reports, please open an issue [here](https://github.com/Luna-the-Turtle/Bag-o-Lists/issues).
+
+---
+
+## Module Showcase
+A full module showcase can be seen at this youtube link: https://youtu.be/nGGm2M9jqu8
 
 ---
 
@@ -62,62 +73,103 @@ You can see the button has been added to the scene controls on the left. It will
 
 ![Scene Controls Button](images/scene-controls-button.png)
 
-Here you can see the tracker being opened on the GM side as well as the Player side.
+Here you can see the tracker being opened.
 
-![Opening Tracker](images/opening-tracker.gif)
-
----
-
-### 2. GM & Player Views
-**GM View:**
-The GM can see and manage all lists, add items, and set custom images. This is a view of the Tracker from the GM perspective.
-
-![GM Tracker Factions](images/GM-Tracker-Factions.png)
-
-**Player View:**
-Players see only their relevant lists and items. This is a view of the Tracker from the Player perspective.
-
-![Player Tracker Factions](images/Player-Tracker-Factions.png)
+![Opening Tracker](images/opening_tracker.gif)
 
 ---
 
-### 3. Creating & Managing Lists
-**Add Tab & Item:**
-Here you can see how new pages/tabs can be created as well as the items for the list to be seen by the player.
-All items are tracker by player so what is shown for one player is not visible for another unless they have a value for that item.
+### 2. Creating & Managing Lists
+**Make New Bags:**
+Create new pages ("bags") for different lists or trackers. The following shows the process of making new bags.
 
-![Add Tab & Item](images/add-tab-add-item.gif)
+![Make New Bags](images/make_new_bags.gif)
 
-**Rename & Delete Tabs:**
-You can even remove the page entirely from the player's view by hitting the delete icon to remove the page. This will remove it for that player only. You also can delete entire tabs and that will remove it everywhere.
+**Adding Items:**
+Add new items to any bag. Items can represent factions, resources, or anything you want to track.
 
-![Delete Tabs](images/delete-tabs.gif)
+![Adding Items](images/adding_items.gif)
+
+**Renaming Bags:**
+Rename any bag directly from the UI for better organization.
+
+![Renaming Bag](images/renaming_bag.gif)
+
+**Deleting Tabs:**
+Remove a bag or a player's tab as needed. This first delete shown will remove it everywhere for all players as well as the GM. The second delete shown will remove it for that player only.
+
+![Delete Tabs](images/deleting_bags_deleting_for_player.gif)
 
 ---
 
-### 4. Customizing Items
-**Choosing Images:**
-You can choose your own images to have show up. A warning that it will have black background so images that are dark will not show up as well. This is something I plan on updating later as well as the ability to center the image as you would like. For now you can pretty easily choose images that work well with the setup or add a background to the image/png.
+### 3. Customizing Items & Player Controls
+**Adding Images:**
+Choose custom images for your items. Use the portrait editor to zoom, reposition, and crop images for a perfect fit.
 
-![Choosing Images](images/choosing-images.gif)
+![Adding Images](images/adding_images.gif)
+
+**Backgrounds & Repositioning:**
+Adjust item backgrounds and reposition images for clarity and style. The backgrounds are made to work well with .png format.
+
+![Backgrounds & Reposition](images/backgrounds_reposition.gif)
+
+Players can adjust them as well!
+
+![Players Choose](images/players_choose.gif)
+
+**Set Values for Players:**
+GMs can set values for each player or custom entry.
+
+![Set Values for Players](images/set_values_for_players.gif)
+
+**New Custom Player:**
+Add custom recipients (NPCs, groups, etc.) to track alongside players. 
+
+![New Custom Player](images/new_custom_player.gif)
+
+**Share Custom Entry:**
+GMs can share these custom entries with players, making them visible as dedicated tabs.
+
+![Share Custom Entry](images/share_custom_entry.gif)
+
+**Players Can View Shared Entries:**
+Players can select the shared custom entry to see it's tracked values with existing bags. 
+
+![Players View Custom Entry](images/players_view_custom_entry.gif)
+
+This functionality allows the GM to create a cross-matrix of custom entries with existing bags so that the player can as in my example see the relationship that an NPC has with in world factions.
+---
+
+### 4. Announcements & Alerts
+**Announcement System:**
+Set up announcements to alert players or the GM when item values cross a threshold. Announcements are dismissible and will reappear if the condition is met again. 
+
+![Announcement System](images/announcement_system.gif)
+
+This allows the GM to set up permanent messages to appear for when a Reputation level threshold is obtained or when a Consumable runs low.
+
+**Reoccurring Announcements:**
+See how announcements can be triggered multiple times as values change.
+
+![Reoccurring Announcements](images/reoccurring_announcements.gif)
+
+This allows a player that crafts their own consumables to have the announcement stay even when the item is used up and then resupplied.
 
 ---
 
 ### 5. Item Tracking Features
-**Persist on Zero:**
-Shows an item disappearing when reaching 0, then the checkbox being marked so it persists at zero. This allows an item to remain if fully consumed. That way a player that crafts the item regularly can still see the item or category. 
-
-![Persist on Zero](images/persist-on-zero.gif)
-
 **Player Tracked Values:**
-Shows the player adjusting item values using their arrows. This works hand in hand with the persist on 0 state as it allows a player to manually track an item and resupply the item if it is recovered through crafting or rest.
+Players can adjust item values using their arrows. This works with the persist on 0 state, allowing a player to manually track and resupply the item if it is recovered through crafting or rest.
 
-![Player Tracked Values](images/player-tracked-values.gif)
+![Player Tracked Values](images/persist_on_0.gif)
+
+**Persist on Zero:**
+Shows an item disappearing when reaching 0, then the checkbox being marked so it persists at zero. This allows an item to remain if fully consumed, so a player that crafts the item regularly can still see the item or category.
+
+![Persist on Zero](images/persist_on_0.gif)
 
 **Real-Time Updates:**
-Everything updates in real-time everywhere. This is so the player can see the changes immediately and doesn't have to close and re-open the tracker to see updates.
-
-![Real-Time Update Values](images/real-time-update-values.gif)
+All changes are synced instantly to all users via socketlib.
 
 ---
 

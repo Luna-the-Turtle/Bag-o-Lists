@@ -1,15 +1,26 @@
 /* Image background application for item images only */
-.fr-img-bg-container { display:inline-flex; align-items:center; justify-content:center; border-radius:6px; padding:0; box-sizing: border-box; overflow:hidden; }
+.fr-img-bg-container {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:6px;
+  padding:0;
+  box-sizing: border-box;
+  overflow:hidden;
+  position:relative;
+  border:2px solid #b48e5a;
+  background: transparent;
+}
 .fr-card .fr-img-bg-container { margin-bottom:10px; }
-.fr-img-bg-container img.fr-card-img { margin-bottom:0 !important; display:block; }
-/* Lock sizing when explicit width/height present */
-.fr-img-bg-container img.fr-img { width:36px; height:36px; }
-.fr-img-bg-container img.fr-card-img { width:80px; height:80px; }
+.fr-img-bg-container .fr-img-transformable { margin-bottom:0 !important; display:block; }
 /* Table view: no extra margin around tiny image */
 .fr-faction .fr-img-bg-container { margin:0; }
-.fr-img-bg-container > img { width:100%; height:100%; object-fit:cover; display:block; }
-.fr-img-bg-container.bg-enabled > img { background:transparent !important; border:none !important; }
-.fr-img-bg-container.bg-enabled { border:1px solid #444; box-shadow: inset 0 0 2px rgba(0,0,0,0.4); }
+.fr-img-bg-container .fr-img-frame { width:100%; height:100%; }
+.fr-img-bg-container.bg-enabled {
+  border-color: #b48e5a;
+  box-shadow: inset 0 0 2px rgba(0,0,0,0.4);
+}
+.fr-img-bg-container.bg-enabled .fr-img-transformable { background:transparent !important; border:none !important; }
 
 
 /* Fallback: subtle background if enabled but no class set */
@@ -85,12 +96,12 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-/* Custom background handling */
+/* Custom background handling (might be implemented later) 
 .fr-table tbody tr.fr-has-bg.fr-bg-custom::before,
 .fr-card.fr-has-bg.fr-bg-custom::before {
   background-size: cover !important;
   background-position: center center !important;
-}
+}*/
 
 /* Background selector styles */
 .fr-bg-dropdown {

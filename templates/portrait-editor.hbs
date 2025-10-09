@@ -1,0 +1,47 @@
+<div class="portrait-editor">
+  <div class="portrait-editor-main">
+    <div class="portrait-editor-preview">
+      <div class="portrait-editor-viewport" data-viewport-size="{{viewportSize}}">
+        <div class="portrait-editor-frame">
+          <img
+            class="portrait-editor-img fr-img-transformable"
+            src="{{imageSrc}}"
+            alt="Portrait preview"
+            data-scale="{{scale}}"
+            data-offset-x="{{offsetX}}"
+            data-offset-y="{{offsetY}}"
+            data-editor-size="{{viewportSize}}"
+          />
+          <div class="portrait-editor-frame-overlay"></div>
+        </div>
+      </div>
+      <div class="portrait-editor-offset portrait-editor-offset-value">x: {{offsetX}}px, y: {{offsetY}}px</div>
+      <p class="portrait-editor-help">Drag the portrait to reposition. Scroll or use the zoom controls to fine-tune the framing. The preview exactly matches the in-table token portrait.</p>
+    </div>
+    <div class="portrait-editor-sidebar">
+      <div class="portrait-editor-control-group">
+        <label for="portrait-editor-zoom">Zoom</label>
+        <div class="portrait-editor-zoom-controls">
+          <button type="button" class="portrait-editor-zoom-button" data-action="zoom-out" title="Zoom out">−</button>
+          <input
+            id="portrait-editor-zoom"
+            class="portrait-editor-zoom-range"
+            type="range"
+            min="{{minZoom}}"
+            max="{{maxZoom}}"
+            step="{{zoomStep}}"
+            value="{{zoomPercent}}"
+          />
+          <button type="button" class="portrait-editor-zoom-button" data-action="zoom-in" title="Zoom in">＋</button>
+        </div>
+        <div class="portrait-editor-zoom-value">{{zoomPercent}}%</div>
+      </div>
+      <div class="portrait-editor-actions">
+        <button type="button" class="portrait-editor-reset">Reset</button>
+        <span class="portrait-editor-action-spacer"></span>
+        <button type="button" class="portrait-editor-cancel">Cancel</button>
+        <button type="button" class="portrait-editor-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
