@@ -2,7 +2,7 @@
   "id": "bag-of-lists",
   "title": "Bag of Lists",
   "description": "A Foundry VTT module for tracking multiple customizable lists (factions, resources, etc.) with per-page data and player/GM views.",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "compatibility": {
     "minimum": "13",
     "verified": "13.348"
@@ -13,9 +13,9 @@
   "license": "MIT",
   "readme": "README.md",
   "socket": true,
-  "url": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.0.1/bag-o-lists.zip",
-  "manifest": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.0.1/module.json",
-  "download": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.0.1/bag-o-lists.zip",
+  "url": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.1.0/bag-o-lists.zip",
+  "manifest": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.1.0/module.json",
+  "download": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.1.0/bag-o-lists.zip",
   "dependencies": [
     {
       "name": "socketlib",

@@ -164,7 +164,7 @@ Players can adjust item values using their arrows. This works with the persist o
 ![Player Tracked Values](images/persist_on_0.gif)
 
 **Persist on Zero:**
-Shows an item disappearing when reaching 0, then the checkbox being marked so it persists at zero. This allows an item to remain if fully consumed, so a player that crafts the item regularly can still see the item or category.
+Shows item remaining after reaching 0, then the final item disappearing as it reaches 0. This allows an item to remain if fully consumed like the bombs in this example, so a player that crafts the item regularly can still see the item or category. However a unique or finite resource like the poison in my example will disappear when the consumable runs out.
 
 ![Persist on Zero](images/persist_on_0.gif)
 
