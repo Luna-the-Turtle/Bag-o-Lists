@@ -1,0 +1,58 @@
+{{!-- Archive Dialog --}}
+<div class="bol-dialog archive-dialog" data-high-contrast="{{highContrast}}">
+  <div class="bol-dialog-content">
+    <div class="bol-archive-section">
+      <div class="bol-archive-header">
+        <h3>📦 Archived Entries</h3>
+        <div class="bol-archive-buttons">
+          <button type="button" id="bol-export-archive" class="bol-archive-action-btn" title="Export archive to file">📤 Export</button>
+          <button type="button" id="bol-import-archive" class="bol-archive-action-btn" title="Import archive from file">📥 Import</button>
+          <input type="file" id="bol-import-archive-file" accept=".json" style="display: none;" />
+        </div>
+      </div>
+      
+      {{#if hasArchivedEntries}}
+        <div class="bol-archive-list">
+          {{#each archivedEntries}}
+            <div class="bol-archive-entry">
+              <img class="bol-archive-entry-img" src="{{img}}" alt="{{name}}" />
+              <div class="bol-archive-entry-info">
+                <span class="bol-archive-entry-name">{{name}}</span>
+                <span class="bol-archive-entry-date">Archived: {{archivedDate}}</span>
+              </div>
+              <div class="bol-archive-entry-actions">
+                <button type="button" class="bol-restore-entry-btn" data-entry-id="{{id}}" title="Restore to active entries">♻️ Restore</button>
+                <button type="button" class="bol-delete-archived-btn" data-entry-id="{{id}}" title="Delete permanently">🗑️</button>
+              </div>
+            </div>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="bol-archive-empty">No archived entries. Archive entries to save them for later use.</p>
+      {{/if}}
+    </div>
+    
+    <hr class="bol-dialog-divider" />
+    
+    <div class="bol-archive-section">
+      <h3>📋 Active Entries (Archive These)</h3>
+      {{#if hasActiveEntries}}
+        <div class="bol-archive-list">
+          {{#each activeEntries}}
+            <div class="bol-archive-entry">
+              <img class="bol-archive-entry-img" src="{{img}}" alt="{{name}}" />
+              <div class="bol-archive-entry-info">
+                <span class="bol-archive-entry-name">{{name}}</span>
+              </div>
+              <div class="bol-archive-entry-actions">
+                <button type="button" class="bol-archive-entry-btn" data-entry-id="{{id}}" title="Move to archive">📦 Archive</button>
+              </div>
+            </div>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="bol-archive-empty">No active custom entries to archive.</p>
+      {{/if}}
+    </div>
+  </div>
+</div>

@@ -1,0 +1,118 @@
+{{!-- Announcements Modal Dialog --}}
+<div class="bol-dialog announcements-dialog bol-announcements-dialog" data-high-contrast="{{highContrast}}">
+  <div class="bol-dialog-content bol-announcements-main">
+    <div class="fr-announcement-toolbar">
+      <span class="fr-announcement-title">Create Announcement</span>
+      <div class="fr-announcement-form-row">
+        <label>Item:</label>
+        <select id="fr-announcement-target" {{#unless announcementTargets.length}}disabled{{/unless}}>
+          {{#if announcementTargets.length}}
+            {{#each announcementTargets}}
+              <option value="{{id}}">{{name}}</option>
+            {{/each}}
+          {{else}}
+            <option value="" disabled selected>No items available</option>
+          {{/if}}
+        </select>
+      </div>
+      
+      <div class="fr-announcement-form-row">
+        <label>Alert Recipients:</label>
+        <select id="fr-announcement-recipients" multiple size="3" {{#unless announcementAudienceOptions.length}}disabled{{/unless}}>
+          {{#each announcementAudienceOptions}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+        <span class="fr-announcement-hint">"Any Player" = first-trigger, "All Players" = everyone</span>
+      </div>
+      
+      <div class="fr-announcement-form-row fr-announcement-threshold-row">
+        <label>Condition:</label>
+        <button id="fr-announcement-operator" type="button" data-operator="le" title="Toggle threshold direction">≤</button>
+        <input id="fr-announcement-threshold" type="number" placeholder="Value" />
+      </div>
+      
+      <div class="fr-announcement-form-row">
+        <label>Message:</label>
+        <input id="fr-announcement-message" type="text" placeholder="Announcement message" />
+      </div>
+      
+      <div class="fr-announcement-form-row fr-announcement-chat-options">
+        <label>Chat Output:</label>
+        <div class="fr-chat-options-container">
+          <label class="fr-inline-checkbox">
+            <input type="checkbox" id="fr-announcement-send-chat" checked />
+            <span>Send to Chat</span>
+          </label>
+          <label class="fr-inline-checkbox">
+            <input type="checkbox" id="fr-announcement-chat-details" />
+            <span>Include Details</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="fr-announcement-form-row" id="fr-chat-recipients-row" style="display: none;">
+        <label>Chat Recipients:</label>
+        <select id="fr-announcement-chat-recipients" multiple size="6">
+          <option value="gm" selected>GM Only</option>
+          <option value="all">Everyone</option>
+          {{#each announcementAudienceOptions}}
+            {{#unless (eq id 'gm')}}
+              {{#unless (eq id 'all-players')}}
+                <option value="{{id}}">{{name}}</option>
+              {{/unless}}
+            {{/unless}}
+          {{/each}}
+        </select>
+      </div>
+      
+      <button id="fr-announcement-add" type="button" class="fr-announcement-add-btn" {{#unless announcementTargets.length}}disabled{{/unless}}>Add Announcement</button>
+    </div>
+    
+    <hr class="bol-dialog-divider" />
+    
+    <div class="fr-announcement-controls">
+      <label>Saved Announcements:</label>
+      <div style="display: flex; gap: 8px; align-items: center; width: 100%;">
+        <select id="fr-announcement-saved" style="flex: 1;" {{#unless announcementSavedList.length}}disabled{{/unless}}>
+          {{#if announcementSavedList.length}}
+            {{#each announcementSavedList}}
+              <option value="{{id}}" {{#if (eq ../announcementSelectedId id)}}selected{{/if}}>{{display}}{{#if targetSummary}} — {{targetSummary}}{{/if}}{{#if sendToChat}} 💬{{/if}}</option>
+            {{/each}}
+          {{else}}
+            <option value="" disabled selected>No announcements saved</option>
+          {{/if}}
+        </select>
+        <button id="fr-announcement-edit" type="button" {{#unless announcementSavedList.length}}disabled{{/unless}} title="Edit selected announcement">✏️ Edit</button>
+        <button id="fr-announcement-duplicate" type="button" {{#unless announcementSavedList.length}}disabled{{/unless}} title="Duplicate and edit">📋 Duplicate</button>
+        <button id="fr-announcement-delete" type="button" {{#unless announcementSavedList.length}}disabled{{/unless}}>🗑️ Delete</button>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; width: 100%; margin-top: 8px;">
+        <label style="margin: 0; white-space: nowrap;">Duplicate to Item:</label>
+        <select id="fr-announcement-duplicate-target" style="flex: 1;" {{#unless announcementSavedList.length}}disabled{{/unless}}>
+          {{#each announcementTargets}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+        <button id="fr-announcement-duplicate-to-item" type="button" {{#unless announcementSavedList.length}}disabled{{/unless}} title="Copy to selected item">📋→ Apply</button>
+      </div>
+    </div>
+    
+    {{#if gmAnnouncementAlerts.length}}
+      <hr class="bol-dialog-divider" />
+      <div class="fr-announcement-alerts-section">
+        <label>Active Alerts:</label>
+        <div class="fr-announcement-alerts bol-dialog-scrollable">
+          {{#each gmAnnouncementAlerts}}
+            <div class="fr-announcement-alert">
+              <span class="fr-announcement-alert-text">{{display}}</span>
+              {{#if details}}
+                <span class="fr-announcement-alert-meta">{{details}}</span>
+              {{/if}}
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    {{/if}}
+  </div>
+</div>

@@ -15,6 +15,113 @@ function logError(message, error) {
     console.error(`[bag-of-lists] [error] ${message}`, error);
   }
 }
+
+// --- Announcement Chat Message Utility ---
+
+/**
+ * Check and send chat messages for announcements that have triggered
+ * Chat messages are sent EVERY time the condition is met when a value changes.
+ * This is completely separate from UI dismissals.
+ * Only processes announcements for the specific faction that was changed.
+ * @param {Object} page - The page object containing factions and announcements
+ * @param {string} userId - The user ID whose values triggered the announcement
+ * @param {string} factionId - The faction ID that was just changed
+ */
+function checkAndSendAnnouncementChatMessages(page, userId, factionId) {
+  if (!page?.announcements?.length) return;
+  if (!game.user.isGM) return; // Only GM sends chat messages
+  if (!factionId) return; // Must specify which faction changed
+  
+  for (const announcement of page.announcements) {
+    if (!announcement.sendToChat) continue;
+    
+    // Only process announcements for the faction that was just changed
+    if (announcement.factionId !== factionId) continue;
+    
+    const targets = Array.isArray(announcement.targets) && announcement.targets.length ? announcement.targets : ['gm'];
+    const isAnyPlayer = targets.includes('any-player');
+    const isAllPlayers = targets.includes('all-players');
+    const isDirectlyTargeted = targets.includes(userId);
+    
+    // Skip if this announcement doesn't apply to this user
+    if (!isDirectlyTargeted && !isAnyPlayer && !isAllPlayers) continue;
+    
+    // Check if the condition is met
+    const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
+    const thresholdNumeric = Number(announcement.threshold);
+    if (!Number.isFinite(thresholdNumeric)) continue;
+    
+    const faction = page.factions.find(f => f.id === announcement.factionId);
+    if (!faction) continue;
+    
+    const rawValue = page.userRelations?.[userId]?.[announcement.factionId];
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) continue;
+    
+    const passes = operatorKey === 'ge' ? value >= thresholdNumeric : value <= thresholdNumeric;
+    if (!passes) continue;
+    
+    // Condition is met - ALWAYS send the chat message (no tracking/deduplication)
+    
+    // Build the chat message based on settings
+    const operatorSymbol = operatorKey === 'ge' ? '≥' : '≤';
+    const userName = game.users.get(userId)?.name ?? 'Unknown';
+    const includeDetails = announcement.chatIncludeDetails !== false;
+    
+    let chatContent;
+    if (includeDetails) {
+      chatContent = `<div class="bol-announcement-chat">
+        <strong>📢 Announcement Triggered</strong><br>
+        <em>${faction.name}</em> ${operatorSymbol} ${thresholdNumeric}<br>
+        <strong>Message:</strong> ${announcement.message ?? 'No message'}<br>
+        <small>Triggered by: ${userName} (current value: ${value})</small>
+      </div>`;
+    } else {
+      // Simple message only
+      chatContent = `<div class="bol-announcement-chat">
+        <strong>📢</strong> ${announcement.message ?? 'Announcement triggered'}
+      </div>`;
+    }
+    
+    // Determine chat recipients
+    const chatRecipients = Array.isArray(announcement.chatRecipients) && announcement.chatRecipients.length 
+      ? announcement.chatRecipients 
+      : ['gm'];
+    
+    let whisperIds = [];
+    if (chatRecipients.includes('all')) {
+      // Public message - no whisper
+      whisperIds = null;
+    } else {
+      // Build whisper list
+      for (const recipientId of chatRecipients) {
+        if (recipientId === 'gm') {
+          whisperIds.push(...game.users.filter(u => u.isGM).map(u => u.id));
+        } else if (recipientId === 'any-player') {
+          // Send to the user who triggered it
+          whisperIds.push(userId);
+        } else {
+          const user = game.users.get(recipientId);
+          if (user) whisperIds.push(user.id);
+        }
+      }
+      // Deduplicate
+      whisperIds = [...new Set(whisperIds)];
+    }
+    
+    const messageData = {
+      content: chatContent,
+      speaker: { alias: 'Bag o\' Lists' }
+    };
+    if (whisperIds !== null && whisperIds.length > 0) {
+      messageData.whisper = whisperIds;
+    }
+    
+    ChatMessage.create(messageData);
+    log('info', `Announcement chat sent: ${faction.name} for user ${userName} (value: ${value})`);
+  }
+}
+
 // --- Socketlib Integration ---
 Hooks.once('socketlib.ready', () => {
   const socket = socketlib.registerModule('bag-of-lists');
@@ -23,7 +130,45 @@ Hooks.once('socketlib.ready', () => {
     // Only update the shared data, preserve each user's active page
     const currentActivePageId = window._fr_temp_state?.activePageId;
     const currentActiveCustomEntryId = window._fr_custom_activeEntryId;
+    
+    // Preserve local permanent dismissals before overwriting state
+    // But skip any that were recently re-enabled by the player
+    const localDismissals = {};
+    if (window._fr_temp_state?.pages && !game.user.isGM) {
+      const currentUserId = game.user.id;
+      for (const page of window._fr_temp_state.pages) {
+        if (page.announcements) {
+          for (const ann of page.announcements) {
+            if (ann.dismissedBy?.[currentUserId] === 'permanent') {
+              const key = `${page.id}-${ann.id}`;
+              // Skip if recently re-enabled
+              if (window._fr_recently_reenabled?.has(key)) {
+                continue;
+              }
+              localDismissals[key] = true;
+            }
+          }
+        }
+      }
+    }
+    
     window._fr_temp_state = foundry.utils.duplicate(newState);
+    
+    // Restore local permanent dismissals to the new state
+    if (Object.keys(localDismissals).length > 0 && window._fr_temp_state?.pages) {
+      const currentUserId = game.user.id;
+      for (const page of window._fr_temp_state.pages) {
+        if (page.announcements) {
+          for (const ann of page.announcements) {
+            const key = `${page.id}-${ann.id}`;
+            if (localDismissals[key]) {
+              ann.dismissedBy ||= {};
+              ann.dismissedBy[currentUserId] = 'permanent';
+            }
+          }
+        }
+      }
+    }
     
     // Restore user's active page if it exists and is valid
     if (currentActivePageId && newState.pages?.some(p => p.id === currentActivePageId)) {
@@ -56,6 +201,9 @@ Hooks.once('socketlib.ready', () => {
       page.userRelations[userId] ||= {};
       page.userRelations[userId][factionId] = newValue;
       resetAnnouncementDismissalsForPage(page);
+      
+      // Check and send chat messages for triggered announcements (only for this faction)
+      checkAndSendAnnouncementChatMessages(page, userId, factionId);
 
       await saveState(state);
 
@@ -67,6 +215,38 @@ Hooks.once('socketlib.ready', () => {
 
   socket.register('playerDismissAnnouncement', async (data) => {
     if (!game.user.isGM) return;
+    const { pageId, announcementId, userId, permanent } = data || {};
+    if (!pageId || !announcementId || !userId || userId === 'gm') return;
+
+    const state = getState();
+    const page = state.pages.find(p => p.id === pageId);
+    if (!page?.announcements) return;
+    const announcement = page.announcements.find(a => a.id === announcementId);
+    if (!announcement) return;
+    
+    // Check if user is targeted (including all-players and any-player)
+    const isTargeted = Array.isArray(announcement.targets) && (
+      announcement.targets.includes(userId) ||
+      announcement.targets.includes('all-players') ||
+      announcement.targets.includes('any-player')
+    );
+    if (!isTargeted) return;
+
+    announcement.dismissedBy ||= {};
+    announcement.dismissedBy[userId] = permanent ? 'permanent' : true;
+    console.log(`[bag-of-lists] GM saved dismissal for user ${userId} on announcement ${announcementId}, permanent: ${permanent}`);
+    if (!permanent) {
+      resetAnnouncementDismissalsForPage(page);
+    }
+
+    await saveState(state);
+
+    const latestState = getState();
+    window.broadcastStateToPlayers(latestState);
+  });
+  
+  socket.register('playerReenableAnnouncement', async (data) => {
+    if (!game.user.isGM) return;
     const { pageId, announcementId, userId } = data || {};
     if (!pageId || !announcementId || !userId || userId === 'gm') return;
 
@@ -75,17 +255,26 @@ Hooks.once('socketlib.ready', () => {
     if (!page?.announcements) return;
     const announcement = page.announcements.find(a => a.id === announcementId);
     if (!announcement) return;
-    if (!Array.isArray(announcement.targets) || !announcement.targets.includes(userId)) return;
+    
+    // Check if user is targeted (including all-players and any-player)
+    const isTargeted = Array.isArray(announcement.targets) && (
+      announcement.targets.includes(userId) ||
+      announcement.targets.includes('all-players') ||
+      announcement.targets.includes('any-player')
+    );
+    if (!isTargeted) return;
 
-    announcement.dismissedBy ||= {};
-    announcement.dismissedBy[userId] = true;
-    resetAnnouncementDismissalsForPage(page);
+    if (announcement.dismissedBy?.[userId]) {
+      delete announcement.dismissedBy[userId];
+      console.log(`[bag-of-lists] GM removed dismissal for user ${userId} on announcement ${announcementId}`);
+    }
 
     await saveState(state);
 
     const latestState = getState();
     window.broadcastStateToPlayers(latestState);
   });
+  
   // Player or GM requests to update faction background (GM authoritative)
   socket.register('updateFactionBackground', async (data) => {
     if (!game.user.isGM) return; // Only GM mutates state
@@ -159,6 +348,17 @@ Hooks.once('socketlib.ready', () => {
   if (typeof window._fr_lastAnnouncementSelectedId === 'undefined') {
     window._fr_lastAnnouncementSelectedId = null;
   }
+  // Track whether the dismissals dropdown is collapsed (default: collapsed/true)
+  if (typeof window._fr_dismissals_collapsed === 'undefined') {
+    window._fr_dismissals_collapsed = true;
+  }
+  // Track recently re-enabled announcements to prevent merge from re-adding them
+  if (!window._fr_recently_reenabled) {
+    window._fr_recently_reenabled = new Set();
+  }
+  
+  // DO NOT initialize temp state here - settings aren't registered yet!
+  // This will be done in the ready hook after init completes
 });
 
 Hooks.on('updateSetting', (setting, value) => {
@@ -200,7 +400,286 @@ Hooks.once("init", () => {
       customEntries: []
     }
   });
+  
+  // Archive storage for saved entries
+  game.settings.register(MODULE_ID, "archive", {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      entries: [] // Archived custom entries
+    }
+  });
+  
+  // ===== User-Configurable Settings =====
+  
+  // Confirmation & Warning Settings
+  game.settings.register(MODULE_ID, "confirmDeletePage", {
+    name: "Confirm Page Deletion",
+    hint: "Show a warning dialog before deleting a page/bag and all its contents.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  
+  game.settings.register(MODULE_ID, "confirmDeleteItem", {
+    name: "Confirm Item Deletion",
+    hint: "Show a warning dialog before deleting individual items from a list.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  
+  // Default Values for New Items
+  game.settings.register(MODULE_ID, "defaultMinValue", {
+    name: "Default Minimum Value",
+    hint: "The default minimum value for newly created list items.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: -50
+  });
+  
+  game.settings.register(MODULE_ID, "defaultMaxValue", {
+    name: "Default Maximum Value",
+    hint: "The default maximum value for newly created list items.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 50
+  });
+  
+  game.settings.register(MODULE_ID, "defaultItemImage", {
+    name: "Default Item Image",
+    hint: "The default image path for newly created list items. Leave empty for default shield icon.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "icons/svg/shield.svg",
+    filePicker: 'image'
+  });
+  
+  // Display Settings
+  game.settings.register(MODULE_ID, "compactMode", {
+    name: "Compact Display Mode",
+    hint: "Use a more compact layout to fit more items on screen. Reduces spacing and font sizes. Note: Conflicts with Large Fonts when both enabled.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => game.factionTracker?.render(true)
+  });
+  
+  game.settings.register(MODULE_ID, "showTooltips", {
+    name: "Show Tooltips",
+    hint: "Display helpful tooltips when hovering over buttons and controls in the Bag o' Lists window.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => game.factionTracker?.render(true)
+  });
+  
+  game.settings.register(MODULE_ID, "showPlayerNames", {
+    name: "Show Player Names in GM View",
+    hint: "Display player/character names above their columns in the GM view.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => game.factionTracker?.render(true)
+  });
+  
+  // Accessibility Settings
+  game.settings.register(MODULE_ID, "largeFonts", {
+    name: "Large Fonts",
+    hint: "Increase font sizes throughout the Bag o' Lists module for better readability. Note: Conflicts with Compact Mode when both enabled.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => game.factionTracker?.render(true)
+  });
+  
+  game.settings.register(MODULE_ID, "highContrast", {
+    name: "High Contrast Mode",
+    hint: "Use higher contrast colors for better visibility and accessibility in Bag o' Lists.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => game.factionTracker?.render(true)
+  });
+  
+  // Archive Settings
+  game.settings.register(MODULE_ID, "showArchiveReminder", {
+    name: "Show Archive Reminder",
+    hint: "Show a notification when deleting items, reminding you that you can archive them instead.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  
+  // Import/Export Settings
+  game.settings.register(MODULE_ID, "confirmImport", {
+    name: "Confirm Before Import",
+    hint: "Show a warning before importing archive data, as it will replace current entries.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
 });
+
+// Archive utility functions
+function getArchive() {
+  const archive = foundry.utils.duplicate(game.settings.get(MODULE_ID, "archive"));
+  if (!Array.isArray(archive.entries)) {
+    archive.entries = [];
+  }
+  return archive;
+}
+
+async function saveArchive(archive) {
+  await game.settings.set(MODULE_ID, "archive", archive);
+}
+
+async function archiveEntry(entryId) {
+  const state = getState();
+  const entryIndex = state.customEntries?.findIndex(e => e.id === entryId);
+  if (entryIndex === -1 || entryIndex === undefined) {
+    ui.notifications?.warn('Entry not found.');
+    return false;
+  }
+  
+  const entry = state.customEntries[entryIndex];
+  const archive = getArchive();
+  
+  // Add timestamp for when it was archived
+  entry.archivedAt = Date.now();
+  archive.entries.push(entry);
+  
+  // Remove from active entries
+  state.customEntries.splice(entryIndex, 1);
+  
+  await saveState(state);
+  await saveArchive(archive);
+  return true;
+}
+
+async function restoreEntry(entryId) {
+  const archive = getArchive();
+  const entryIndex = archive.entries?.findIndex(e => e.id === entryId);
+  if (entryIndex === -1 || entryIndex === undefined) {
+    ui.notifications?.warn('Archived entry not found.');
+    return false;
+  }
+  
+  const entry = archive.entries[entryIndex];
+  const state = getState();
+  
+  // Remove archive timestamp
+  delete entry.archivedAt;
+  
+  state.customEntries ||= [];
+  state.customEntries.push(entry);
+  
+  // Remove from archive
+  archive.entries.splice(entryIndex, 1);
+  
+  await saveState(state);
+  await saveArchive(archive);
+  return true;
+}
+
+async function deleteArchivedEntry(entryId) {
+  const archive = getArchive();
+  const entryIndex = archive.entries?.findIndex(e => e.id === entryId);
+  if (entryIndex === -1 || entryIndex === undefined) {
+    ui.notifications?.warn('Archived entry not found.');
+    return false;
+  }
+  
+  archive.entries.splice(entryIndex, 1);
+  await saveArchive(archive);
+  return true;
+}
+
+function exportArchive() {
+  // Export BOTH archived entries AND active custom entries
+  // This captures the complete state at export time
+  const archive = getArchive();
+  const state = getState();
+  
+  const exportData = {
+    version: 2, // Version flag to distinguish from old format
+    entries: archive.entries || [], // Archived entries
+    activeEntries: state.customEntries || [] // Active custom entries
+  };
+  
+  const data = JSON.stringify(exportData, null, 2);
+  const filename = `bag-of-lists-archive-${new Date().toISOString().slice(0,10)}.json`;
+  saveDataToFile(data, 'application/json', filename);
+  
+  const totalEntries = exportData.entries.length + exportData.activeEntries.length;
+  ui.notifications?.info(`Archive exported with ${totalEntries} entries (${exportData.entries.length} archived, ${exportData.activeEntries.length} active).`);
+}
+
+async function importArchive(fileInput) {
+  return new Promise((resolve, reject) => {
+    const file = fileInput.files?.[0];
+    if (!file) {
+      reject(new Error('No file selected'));
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        
+        // Handle both old format (v1) and new format (v2)
+        // v1: { entries: [...] } - only archived entries
+        // v2: { version: 2, entries: [...], activeEntries: [...] } - both archived and active
+        
+        if (!Array.isArray(data.entries)) {
+          throw new Error('Invalid archive format');
+        }
+        
+        // Replace archived entries
+        await saveArchive({ entries: data.entries });
+        
+        // If v2 format, also replace active custom entries
+        if (data.version >= 2 && Array.isArray(data.activeEntries)) {
+          const state = getState();
+          state.customEntries = data.activeEntries;
+          await saveState(state);
+        } else {
+          // v1 format: Clear active custom entries since old exports only captured archived state
+          // This prevents duplicates when importing old-format archives
+          const state = getState();
+          state.customEntries = [];
+          await saveState(state);
+        }
+        
+        const archivedCount = data.entries.length;
+        const activeCount = data.activeEntries?.length || 0;
+        const totalCount = archivedCount + activeCount;
+        
+        ui.notifications?.info(`Archive restored: ${totalCount} entries (${archivedCount} archived, ${activeCount} active).`);
+        resolve(totalCount);
+      } catch (err) {
+        ui.notifications?.error('Failed to import archive: ' + err.message);
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
 
 function getState() {
   // duplicate to avoid accidental in-place mutation of settings object
@@ -229,7 +708,16 @@ function getState() {
         announcement.dismissedBy = {};
       } else {
         for (const targetId of Object.keys(announcement.dismissedBy)) {
-          if (targetId === 'gm' || !announcement.targets.includes(targetId)) {
+          // Don't remove permanent dismissals - players should keep them regardless
+          if (announcement.dismissedBy[targetId] === 'permanent') {
+            continue;
+          }
+          // For temporary dismissals, only remove if user is not targeted or announcement doesn't pass
+          const isTargeted = targetId === 'gm' || 
+                             announcement.targets.includes(targetId) || 
+                             announcement.targets.includes('all-players') ||
+                             announcement.targets.includes('any-player');
+          if (!isTargeted || !doesAnnouncementPassForTarget(announcement, page, targetId)) {
             delete announcement.dismissedBy[targetId];
           }
         }
@@ -295,7 +783,12 @@ function normalizeImageConfig(config) {
 
 function doesAnnouncementPassForTarget(announcement, page, targetId) {
   if (!announcement || !page || !targetId || targetId === 'gm') return false;
-  if (!Array.isArray(announcement.targets) || !announcement.targets.includes(targetId)) return false;
+  if (!Array.isArray(announcement.targets)) return false;
+  // Check if the announcement targets this user
+  const isTargeted = announcement.targets.includes(targetId) || 
+                     announcement.targets.includes('all-players') || 
+                     announcement.targets.includes('any-player');
+  if (!isTargeted) return false;
   const thresholdNumeric = Number(announcement.threshold);
   if (!Number.isFinite(thresholdNumeric)) return false;
   const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
@@ -316,7 +809,15 @@ function resetAnnouncementDismissalsForPage(page) {
         delete dismissedBy[targetId];
         continue;
       }
-      if (!announcement.targets.includes(targetId) || !doesAnnouncementPassForTarget(announcement, page, targetId)) {
+      // Don't reset permanent dismissals
+      if (dismissedBy[targetId] === 'permanent') {
+        continue;
+      }
+      // Check if user is still targeted
+      const isTargeted = announcement.targets.includes(targetId) || 
+                         announcement.targets.includes('all-players') || 
+                         announcement.targets.includes('any-player');
+      if (!isTargeted || !doesAnnouncementPassForTarget(announcement, page, targetId)) {
         delete dismissedBy[targetId];
       }
     }
@@ -348,8 +849,8 @@ function applyImageTransforms(root = document) {
         const offsetY = (config.offsetY || 0) * ratio;
         const naturalWidth = img.naturalWidth || viewportSize;
         const naturalHeight = img.naturalHeight || viewportSize;
-  const baseScale = Math.min(viewportSize / naturalWidth, viewportSize / naturalHeight) || 1;
-  const scale = baseScale * (config.scale ?? PORTRAIT_DEFAULT_SCALE);
+        const baseScale = Math.min(viewportSize / naturalWidth, viewportSize / naturalHeight) || 1;
+        const scale = baseScale * (config.scale ?? PORTRAIT_DEFAULT_SCALE);
 
         img.style.position = 'absolute';
         img.style.left = '50%';
@@ -410,19 +911,43 @@ function buildFactionDisplay(page, userId, faction) {
   if (!hasEntry) return null;
   if (value === 0 && !faction.persistOnZero) return null;
   const imgConfig = normalizeImageConfig(faction.imgConfig);
-  const clamped = Math.max(-50, Math.min(50, Number(value) || 0));
-  const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
+  
+  // Get min/max values from faction settings, with defaults
+  const minValue = faction.minValue ?? -50;
+  const maxValue = faction.maxValue ?? 50;
+  const clamped = Math.max(minValue, Math.min(maxValue, Number(value) || 0));
+  
+  // Calculate percentage for meter display
+  const range = maxValue - minValue;
+  let pct, posWidth, negWidth;
+  
+  if (minValue >= 0) {
+    // Positive-only mode
+    pct = range > 0 ? Math.min(1, Math.max(0, clamped / maxValue)) : 0;
+    posWidth = Math.round(pct * 50);
+    negWidth = 0;
+  } else {
+    // Standard mode with negative and positive values
+    pct = range > 0 ? Math.min(1, Math.max(0, Math.abs(clamped) / Math.max(Math.abs(minValue), Math.abs(maxValue)))) : 0;
+    posWidth = (clamped > 0) ? Math.round(pct * 50) : 0;
+    negWidth = (clamped < 0) ? Math.round(pct * 50) : 0;
+  }
+  
   return {
     id: faction.id,
     name: faction.name,
+    description: faction.description || '',
+    linkedUuid: faction.linkedUuid || '',
     img: faction.img || "icons/svg/shield.svg",
     persistOnZero: !!faction.persistOnZero,
     playerControlled: faction.playerControlled ?? false,
     imgBgEnabled: faction.imgBgEnabled ?? false,
     imgBgClass: faction.imgBgClass || '',
+    minValue,
+    maxValue,
     value: clamped,
-    posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
-    negWidth: (clamped < 0) ? Math.round(pct * 50) : 0,
+    posWidth,
+    negWidth,
     imgScale: imgConfig.scale,
     imgOffsetX: imgConfig.offsetX,
     imgOffsetY: imgConfig.offsetY,
@@ -432,12 +957,15 @@ function buildFactionDisplay(page, userId, faction) {
 }
 
 class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
-  constructor({ pageId, factionId, imgSrc, imgConfig, parentApp } = {}) {
+  constructor({ pageId, factionId, imgSrc, imgConfig, parentApp, isCharacterEditor = false, customEntryId = null, recipientId = null } = {}) {
     super({ id: `bol-portrait-editor-${foundry.utils.randomID()}` });
     this.pageId = pageId;
     this.factionId = factionId;
     this.imgSrc = imgSrc;
     this.parentApp = parentApp;
+    this.isCharacterEditor = isCharacterEditor;
+    this.customEntryId = customEntryId;
+    this.recipientId = recipientId;
     this._viewportSize = PORTRAIT_EDITOR_SIZE;
     this._state = this._initializeState(normalizeImageConfig(imgConfig));
     this._imageReady = false;
@@ -727,6 +1255,32 @@ class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMi
   }
 
   async _persistConfig(config) {
+    if (this.isCharacterEditor) {
+      // For character editor modal, update parent dialog's recipientData
+      if (this.parentApp?.recipientData) {
+        this.parentApp.recipientData.imgConfig = config;
+        this.parentApp.render(true);
+      }
+      return;
+    }
+    
+    // For custom entry editing from character icon row
+    if (this.customEntryId) {
+      const state = getState();
+      state.customEntries ||= [];
+      const entry = state.customEntries.find(e => e.id === this.customEntryId);
+      if (entry) {
+        entry.imgConfig = config;
+        await saveState(state);
+        const latest = getState();
+        window._fr_temp_state = latest;
+        if (this.parentApp?.rendered) {
+          this.parentApp.render(true);
+        }
+      }
+      return;
+    }
+    
     if (game.user.isGM) {
       const state = getState();
       const page = state.pages?.find?.(p => p.id === this.pageId);
@@ -734,6 +1288,12 @@ class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMi
       const faction = page.factions?.find?.(f => f.id === this.factionId);
       if (!faction) throw new Error('Faction not found for portrait update');
       faction.imgConfig = config;
+      
+      // Update parent dialog's factionData if it's EditBagDialog
+      if (this.parentApp?.factionData) {
+        this.parentApp.factionData.imgConfig = config;
+      }
+      
       await saveState(state);
       const latest = getState();
       window._fr_temp_state = latest;
@@ -741,6 +1301,21 @@ class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMi
         this.parentApp.render(true);
       }
     } else if (game.bagOfListsSocket) {
+      // Optimistic update for player
+      const state = getState();
+      const page = state.pages?.find?.(p => p.id === this.pageId);
+      if (page) {
+        const faction = page.factions?.find?.(f => f.id === this.factionId);
+        if (faction) {
+          faction.imgConfig = config;
+          window._fr_temp_state = { ...state };
+          if (this.parentApp?.rendered) {
+            this.parentApp.render(true);
+          }
+        }
+      }
+      
+      // Send to GM for persistence
       game.bagOfListsSocket.executeAsGM('updateFactionImageConfig', {
         pageId: this.pageId,
         factionId: this.factionId,
@@ -764,10 +1339,1186 @@ class PortraitEditorApp extends foundry.applications.api.HandlebarsApplicationMi
   }
 }
 
+/** ------- Edit/Add Bag Dialog (ApplicationV2) ------- **/
+class EditBagDialog extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor({ pageId, factionId, factionData, parentApp, isNew = false } = {}) {
+    super({ id: `bol-edit-bag-${foundry.utils.randomID()}` });
+    this.pageId = pageId;
+    this.factionId = factionId;
+    this.factionData = factionData || {};
+    this.parentApp = parentApp;
+    this.isNew = isNew;
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: 'bol-edit-bag-dialog',
+    tag: 'form',
+    window: {
+      title: 'Edit/Add Bag',
+      resizable: false,
+      minimizable: false
+    },
+    position: {
+      width: 400,
+      height: 'auto'
+    },
+    actions: {},
+    form: {
+      handler: undefined,
+      submitOnChange: false,
+      closeOnSubmit: false
+    }
+  };
+
+  static PARTS = {
+    form: {
+      template: 'modules/bag-of-lists/templates/edit-bag-dialog.hbs'
+    }
+  };
+
+  async _prepareContext() {
+    const imgConfig = normalizeImageConfig(this.factionData.imgConfig);
+    const minValue = this.factionData.minValue ?? -50;
+    const maxValue = this.factionData.maxValue ?? 50;
+    
+    return {
+      name: this.factionData.name || '',
+      description: this.factionData.description || '',
+      linkedUuid: this.factionData.linkedUuid || '',
+      img: this.factionData.img || 'icons/svg/shield.svg',
+      persistOnZero: !!this.factionData.persistOnZero,
+      playerControlled: this.factionData.playerControlled ?? false,
+      imgBgEnabled: this.factionData.imgBgEnabled ?? false,
+      imgBgClass: this.factionData.imgBgClass || '',
+      minValue,
+      maxValue,
+      imgScale: imgConfig.scale,
+      imgOffsetX: imgConfig.offsetX,
+      imgOffsetY: imgConfig.offsetY,
+      imgEditorSize: imgConfig.editorSize,
+      isNew: this.isNew,
+      highContrast: game.settings.get(MODULE_ID, 'highContrast')
+    };
+  }
+
+  _onRender(context, options) {
+    const html = this.element;
+    const $html = $(html);
+    
+    // Apply image transforms
+    applyImageTransforms(html);
+    
+    // Change icon button
+    $html.find('.bol-change-icon-btn').on('click', () => {
+      const fp = new FilePicker({
+        type: 'image',
+        callback: (path) => {
+          this.factionData.img = path;
+          this.factionData.imgConfig = defaultImageConfig();
+          this.render(true);
+        }
+      });
+      fp.render(true);
+    });
+    
+    // Adjust Framing button
+    $html.find('.bol-adjust-frame-btn').on('click', () => {
+      const imgConfig = normalizeImageConfig(this.factionData.imgConfig);
+      const imgSrc = this.factionData.img || 'icons/svg/shield.svg';
+      const editor = new PortraitEditorApp({
+        pageId: this.pageId,
+        factionId: this.factionId,
+        imgSrc,
+        imgConfig,
+        parentApp: this
+      });
+      editor.render(true);
+    });
+    
+    // UUID Clear button
+    $html.find('.bol-uuid-clear-btn').on('click', () => {
+      $html.find('#bol-bag-uuid').val('');
+      $html.find('.bol-uuid-open-btn').prop('disabled', true);
+    });
+    
+    // UUID Open button - open the linked document
+    $html.find('.bol-uuid-open-btn').on('click', async () => {
+      const uuid = $html.find('#bol-bag-uuid').val()?.trim();
+      if (!uuid) return;
+      try {
+        const doc = await fromUuid(uuid);
+        if (doc?.sheet) {
+          doc.sheet.render(true);
+        } else {
+          ui.notifications?.warn('Could not open the linked item.');
+        }
+      } catch (err) {
+        logError('Failed to open linked UUID', err);
+        ui.notifications?.error('Invalid UUID or item not found.');
+      }
+    });
+    
+    // UUID input change - enable/disable open button
+    $html.find('#bol-bag-uuid').on('input', (ev) => {
+      const hasValue = !!ev.currentTarget.value.trim();
+      $html.find('.bol-uuid-open-btn').prop('disabled', !hasValue);
+    });
+    
+    // UUID drag-drop support
+    const uuidInput = $html.find('#bol-bag-uuid')[0];
+    if (uuidInput) {
+      uuidInput.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'link';
+      });
+      
+      uuidInput.addEventListener('drop', async (ev) => {
+        ev.preventDefault();
+        try {
+          const data = JSON.parse(ev.dataTransfer.getData('text/plain'));
+          if (data.uuid) {
+            uuidInput.value = data.uuid;
+            $html.find('.bol-uuid-open-btn').prop('disabled', false);
+          }
+        } catch (err) {
+          // Try to parse as plain UUID string
+          const text = ev.dataTransfer.getData('text/plain')?.trim();
+          if (text && text.includes('.')) {
+            uuidInput.value = text;
+            $html.find('.bol-uuid-open-btn').prop('disabled', false);
+          }
+        }
+      });
+    }
+    
+    // Background toggle
+    $html.find('#bol-bag-bg-toggle').on('change', (ev) => {
+      const enabled = ev.currentTarget.checked;
+      this.factionData.imgBgEnabled = enabled;
+      this.render(true);
+    });
+    
+    // Background color selector
+    $html.find('#bol-bag-bg-select').on('change', (ev) => {
+      const bgClass = ev.currentTarget.value;
+      this.factionData.imgBgClass = bgClass;
+      if (bgClass && !this.factionData.imgBgEnabled) {
+        this.factionData.imgBgEnabled = true;
+      }
+      this.render(true);
+    });
+    
+    // Save button
+    $html.find('.bol-save-btn').on('click', async () => {
+      await this._handleSave($html);
+    });
+    
+    // Delete button
+    $html.find('.bol-delete-btn').on('click', async () => {
+      await this._handleDelete();
+    });
+    
+    // Enter key in name field saves
+    $html.find('#bol-bag-name').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        this._handleSave($html);
+      }
+    });
+  }
+
+  async _handleSave($html) {
+    const name = $html.find('#bol-bag-name').val()?.trim();
+    if (!name) {
+      ui.notifications?.warn('Please enter a name for the item.');
+      return;
+    }
+    
+    const description = $html.find('#bol-bag-description').val()?.trim() || '';
+    const linkedUuid = $html.find('#bol-bag-uuid').val()?.trim() || '';
+    const persistOnZero = $html.find('#bol-persist-zero').is(':checked');
+    const playerControlled = $html.find('#bol-player-controlled').is(':checked');
+    
+    // Read min/max values from inputs
+    const minInput = $html.find('#bol-min-value').val()?.trim();
+    const maxInput = $html.find('#bol-max-value').val()?.trim();
+    let minValue = minInput !== '' ? Number(minInput) : -50;
+    let maxValue = maxInput !== '' ? Number(maxInput) : 50;
+    if (isNaN(minValue)) minValue = -50;
+    if (isNaN(maxValue)) maxValue = 50;
+    
+    // Validate min/max
+    if (minValue >= maxValue) {
+      ui.notifications?.warn('Maximum value must be greater than minimum value.');
+      return;
+    }
+    
+    const state = getState();
+    const page = state.pages.find(p => p.id === this.pageId);
+    if (!page) {
+      ui.notifications?.error('Page not found.');
+      return;
+    }
+    
+    if (this.isNew) {
+      // Add new faction
+      const newFaction = {
+        id: foundry.utils.randomID(),
+        name,
+        description,
+        linkedUuid,
+        img: this.factionData.img || 'icons/svg/shield.svg',
+        persistOnZero,
+        playerControlled,
+        minValue,
+        maxValue,
+        imgConfig: this.factionData.imgConfig || defaultImageConfig(),
+        imgBgEnabled: this.factionData.imgBgEnabled ?? false,
+        imgBgClass: this.factionData.imgBgClass || ''
+      };
+      page.factions.push(newFaction);
+    } else {
+      // Update existing faction
+      const faction = page.factions.find(f => f.id === this.factionId);
+      if (faction) {
+        faction.name = name;
+        faction.description = description;
+        faction.linkedUuid = linkedUuid;
+        faction.persistOnZero = persistOnZero;
+        faction.playerControlled = playerControlled;
+        faction.minValue = minValue;
+        faction.maxValue = maxValue;
+        faction.img = this.factionData.img || faction.img;
+        if (this.factionData.imgConfig) {
+          faction.imgConfig = this.factionData.imgConfig;
+        }
+        faction.imgBgEnabled = this.factionData.imgBgEnabled ?? false;
+        faction.imgBgClass = this.factionData.imgBgClass || '';
+      }
+    }
+    
+    await saveState(state);
+    const latestState = getState();
+    window._fr_temp_state = latestState;
+    
+    if (this.parentApp?.rendered) {
+      this.parentApp.render(true);
+    }
+    
+    this.close();
+  }
+
+  async _handleDelete() {
+    if (this.isNew) {
+      this.close();
+      return;
+    }
+    
+    const confirm = await Dialog.confirm({
+      title: 'Delete Item',
+      content: `<p>Are you sure you want to delete "${this.factionData.name}"? This cannot be undone.</p>`,
+      yes: () => true,
+      no: () => false,
+      defaultYes: false
+    });
+    
+    if (!confirm) return;
+    
+    const state = getState();
+    const page = state.pages.find(p => p.id === this.pageId);
+    if (page) {
+      page.factions = page.factions.filter(f => f.id !== this.factionId);
+      // Clean up relations and announcements
+      for (const uid of Object.keys(page.userRelations ?? {})) {
+        if (page.userRelations[uid]) delete page.userRelations[uid][this.factionId];
+      }
+      if (Array.isArray(page.announcements)) {
+        page.announcements = page.announcements.filter(a => a.factionId !== this.factionId);
+      }
+    }
+    
+    await saveState(state);
+    const latestState = getState();
+    window._fr_temp_state = latestState;
+    
+    if (this.parentApp?.rendered) {
+      this.parentApp.render(true);
+    }
+    
+    this.close();
+  }
+}
+
+/** ------- Edit/Add Character Dialog (ApplicationV2) ------- **/
+class EditCharacterDialog extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor({ recipientId, recipientData, parentApp, isNew = false, isCustom = false } = {}) {
+    super({ id: `bol-edit-character-${foundry.utils.randomID()}` });
+    this.recipientId = recipientId;
+    this.recipientData = recipientData || {};
+    this.parentApp = parentApp;
+    this.isNew = isNew;
+    this.isCustom = isCustom;
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: 'bol-edit-character-dialog',
+    tag: 'form',
+    window: {
+      title: 'Edit/Add Character',
+      resizable: false,
+      minimizable: false
+    },
+    position: {
+      width: 400,
+      height: 'auto'
+    },
+    actions: {},
+    form: {
+      handler: undefined,
+      submitOnChange: false,
+      closeOnSubmit: false
+    }
+  };
+
+  static PARTS = {
+    form: {
+      template: 'modules/bag-of-lists/templates/edit-character-dialog.hbs'
+    }
+  };
+
+  async _prepareContext() {
+    // For players, try to get their character/actor image
+    let img = this.recipientData.img || 'icons/svg/mystery-man.svg';
+    if (!this.isCustom && this.recipientId) {
+      const user = game.users?.get(this.recipientId);
+      if (user?.character?.img) {
+        img = user.character.img;
+      } else if (user?.avatar) {
+        img = user.avatar;
+      }
+    }
+    
+    const imgConfig = normalizeImageConfig(this.recipientData.imgConfig);
+    return {
+      name: this.recipientData.name || '',
+      img,
+      showIcon: this.recipientData.showIcon ?? true,
+      isNew: this.isNew,
+      isCustom: this.isCustom,
+      imgScale: imgConfig.scale,
+      imgOffsetX: imgConfig.offsetX,
+      imgOffsetY: imgConfig.offsetY,
+      imgEditorSize: imgConfig.editorSize,
+      imgBgEnabled: this.recipientData.imgBgEnabled ?? false,
+      imgBgClass: this.recipientData.imgBgClass || '',
+      highContrast: game.settings.get(MODULE_ID, 'highContrast')
+    };
+  }
+
+  _onRender(context, options) {
+    const html = this.element;
+    const $html = $(html);
+    
+    // Apply image transforms
+    applyImageTransforms(html);
+    
+    // Change icon button
+    $html.find('.bol-change-icon-btn').on('click', () => {
+      const fp = new FilePicker({
+        type: 'image',
+        callback: (path) => {
+          this.recipientData.img = path;
+          this.recipientData.imgConfig = defaultImageConfig();
+          this.render(true);
+        }
+      });
+      fp.render(true);
+    });
+    
+    // Adjust Framing button
+    $html.find('.bol-adjust-frame-btn').on('click', () => {
+      const imgConfig = normalizeImageConfig(this.recipientData.imgConfig);
+      const imgSrc = this.recipientData.img || 'icons/svg/mystery-man.svg';
+      const editor = new PortraitEditorApp({
+        pageId: null,
+        factionId: this.recipientId,
+        imgSrc,
+        imgConfig,
+        parentApp: this,
+        isCharacterEditor: true
+      });
+      editor.render(true);
+    });
+    
+    // Background toggle
+    $html.find('#bol-char-bg-toggle').on('change', (ev) => {
+      const enabled = ev.currentTarget.checked;
+      this.recipientData.imgBgEnabled = enabled;
+      this.render(true);
+    });
+    
+    // Background color selector
+    $html.find('#bol-char-bg-select').on('change', (ev) => {
+      const bgClass = ev.currentTarget.value;
+      this.recipientData.imgBgClass = bgClass;
+      if (bgClass && !this.recipientData.imgBgEnabled) {
+        this.recipientData.imgBgEnabled = true;
+      }
+      this.render(true);
+    });
+    
+    // Save button
+    $html.find('.bol-save-btn').on('click', async () => {
+      await this._handleSave($html);
+    });
+    
+    // Delete button
+    $html.find('.bol-delete-btn').on('click', async () => {
+      await this._handleDelete();
+    });
+    
+    // Enter key in name field saves
+    $html.find('#bol-char-name').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        this._handleSave($html);
+      }
+    });
+  }
+
+  async _handleSave($html) {
+    const name = $html.find('#bol-char-name').val()?.trim();
+    if (!name && this.isCustom) {
+      ui.notifications?.warn('Please enter a name for the custom entry.');
+      return;
+    }
+    
+    const showIcon = $html.find('#bol-show-icon').is(':checked');
+    
+    const state = getState();
+    
+    if (this.isCustom) {
+      if (this.isNew) {
+        // Add new custom entry
+        state.customEntries ||= [];
+        const newEntry = {
+          id: `custom-${foundry.utils.randomID()}`,
+          name,
+          sharedToPlayers: false,
+          showIcon,
+          img: this.recipientData.img || 'icons/svg/mystery-man.svg',
+          imgConfig: this.recipientData.imgConfig || defaultImageConfig(),
+          imgBgEnabled: this.recipientData.imgBgEnabled ?? false,
+          imgBgClass: this.recipientData.imgBgClass || ''
+        };
+        state.customEntries.push(newEntry);
+      } else {
+        // Update existing custom entry
+        state.customEntries ||= [];
+        const entry = state.customEntries.find(e => e.id === this.recipientId);
+        if (entry) {
+          entry.name = name;
+          entry.showIcon = showIcon;
+          if (this.recipientData.img) {
+            entry.img = this.recipientData.img;
+          }
+          if (this.recipientData.imgConfig) {
+            entry.imgConfig = this.recipientData.imgConfig;
+          }
+          entry.imgBgEnabled = this.recipientData.imgBgEnabled ?? false;
+          entry.imgBgClass = this.recipientData.imgBgClass || '';
+        }
+      }
+    } else {
+      // For players, we store their display preferences in a separate structure
+      state.recipientPrefs ||= {};
+      state.recipientPrefs[this.recipientId] = {
+        showIcon,
+        customImg: this.recipientData.img || null,
+        imgConfig: this.recipientData.imgConfig || defaultImageConfig(),
+        imgBgEnabled: this.recipientData.imgBgEnabled ?? false,
+        imgBgClass: this.recipientData.imgBgClass || ''
+      };
+    }
+    
+    await saveState(state);
+    const latestState = getState();
+    window._fr_temp_state = latestState;
+    
+    if (this.parentApp?.rendered) {
+      this.parentApp.render(true);
+    }
+    
+    this.close();
+  }
+
+  async _handleDelete() {
+    if (this.isNew || !this.isCustom) {
+      // Can't delete players from here, only custom entries
+      this.close();
+      return;
+    }
+    
+    const confirm = await Dialog.confirm({
+      title: 'Delete Custom Entry',
+      content: `<p>Are you sure you want to delete "${this.recipientData.name}"? This cannot be undone.</p>`,
+      yes: () => true,
+      no: () => false,
+      defaultYes: false
+    });
+    
+    if (!confirm) return;
+    
+    const state = getState();
+    state.customEntries ||= [];
+    const index = state.customEntries.findIndex(entry => entry.id === this.recipientId);
+    if (index !== -1) {
+      state.customEntries.splice(index, 1);
+    }
+    // Clean up relations
+    for (const page of state.pages ?? []) {
+      if (page.userRelations?.[this.recipientId]) {
+        delete page.userRelations[this.recipientId];
+      }
+    }
+    
+    await saveState(state);
+    const latestState = getState();
+    window._fr_temp_state = latestState;
+    
+    if (this.parentApp?.rendered) {
+      this.parentApp.render(true);
+    }
+    
+    this.close();
+  }
+}
+
+/** ------- Archive Dialog (ApplicationV2) ------- **/
+class ArchiveDialog extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor({ parentApp } = {}) {
+    super({ id: `bol-archive-${foundry.utils.randomID()}` });
+    this.parentApp = parentApp;
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: 'bol-archive-dialog',
+    tag: 'form',
+    window: {
+      title: 'Entry Archive',
+      resizable: true,
+      minimizable: true
+    },
+    position: {
+      width: 500,
+      height: 400
+    },
+    actions: {},
+    form: {
+      handler: undefined,
+      submitOnChange: false,
+      closeOnSubmit: false
+    }
+  };
+
+  static PARTS = {
+    form: {
+      template: 'modules/bag-of-lists/templates/archive-dialog.hbs'
+    }
+  };
+
+  async _prepareContext() {
+    const archive = getArchive();
+    const state = getState();
+    
+    // Format archived entries for display
+    const archivedEntries = (archive.entries || []).map(entry => {
+      const archivedDate = entry.archivedAt ? new Date(entry.archivedAt).toLocaleDateString() : 'Unknown';
+      return {
+        id: entry.id,
+        name: entry.name || 'Unnamed Entry',
+        img: entry.img || 'icons/svg/mystery-man.svg',
+        archivedDate
+      };
+    });
+    
+    // Format active custom entries that can be archived
+    const activeEntries = (state.customEntries || []).map(entry => ({
+      id: entry.id,
+      name: entry.name || 'Unnamed Entry',
+      img: entry.img || 'icons/svg/mystery-man.svg'
+    }));
+    
+    return {
+      archivedEntries,
+      activeEntries,
+      hasArchivedEntries: archivedEntries.length > 0,
+      hasActiveEntries: activeEntries.length > 0,
+      highContrast: game.settings.get(MODULE_ID, 'highContrast')
+    };
+  }
+
+  _onRender(context, options) {
+    const html = this.element;
+    const $html = $(html);
+    
+    // Archive an active entry
+    $html.find('.bol-archive-entry-btn').on('click', async (ev) => {
+      const entryId = ev.currentTarget.dataset.entryId;
+      if (!entryId) return;
+      
+      const success = await archiveEntry(entryId);
+      if (success) {
+        ui.notifications?.info('Entry archived successfully.');
+        this.render(true);
+        if (this.parentApp?.rendered) {
+          window._fr_temp_state = getState();
+          this.parentApp.render(false); // Don't bring to front
+        }
+        // Keep this dialog focused
+        setTimeout(() => this.bringToFront(), 10);
+      }
+    });
+    
+    // Restore an archived entry
+    $html.find('.bol-restore-entry-btn').on('click', async (ev) => {
+      const entryId = ev.currentTarget.dataset.entryId;
+      if (!entryId) return;
+      
+      const success = await restoreEntry(entryId);
+      if (success) {
+        ui.notifications?.info('Entry restored successfully.');
+        this.render(true);
+        if (this.parentApp?.rendered) {
+          window._fr_temp_state = getState();
+          this.parentApp.render(false); // Don't bring to front
+        }
+        // Keep this dialog focused
+        setTimeout(() => this.bringToFront(), 10);
+      }
+    });
+    
+    // Delete an archived entry permanently
+    $html.find('.bol-delete-archived-btn').on('click', async (ev) => {
+      const entryId = ev.currentTarget.dataset.entryId;
+      if (!entryId) return;
+      
+      const confirmed = await Dialog.confirm({
+        title: 'Delete Archived Entry',
+        content: '<p>Are you sure you want to permanently delete this archived entry? This cannot be undone.</p>'
+      });
+      
+      if (confirmed) {
+        const success = await deleteArchivedEntry(entryId);
+        if (success) {
+          ui.notifications?.info('Archived entry deleted.');
+          this.render(true);
+        }
+      }
+    });
+    
+    // Export archive
+    $html.find('#bol-export-archive').on('click', () => {
+      exportArchive();
+    });
+    
+    // Import archive
+    $html.find('#bol-import-archive').on('click', async () => {
+      // Check if confirmation is enabled
+      const confirmEnabled = game.settings.get(MODULE_ID, 'confirmImport');
+      
+      let confirmed = true;
+      if (confirmEnabled) {
+        confirmed = await Dialog.confirm({
+          title: 'Import Archive',
+          content: '<p>Importing will <strong>replace</strong> all current custom entries (both active and archived) with the data from the file.</p><p>This cannot be undone. Continue?</p>'
+        });
+      }
+      
+      if (confirmed) {
+        $html.find('#bol-import-archive-file').click();
+      }
+    });
+    
+    $html.find('#bol-import-archive-file').on('change', async (ev) => {
+      try {
+        await importArchive(ev.currentTarget);
+        this.render(true);
+        // Also refresh the parent tracker app since active entries may have changed
+        if (this.parentApp?.rendered) {
+          window._fr_temp_state = getState();
+          this.parentApp.render(false); // Don't bring to front
+        }
+        // Keep this dialog focused
+        setTimeout(() => this.bringToFront(), 10);
+      } catch (err) {
+        logError('Import failed', err);
+      }
+      // Reset the file input
+      ev.currentTarget.value = '';
+    });
+  }
+}
+
+/** ------- Announcements Dialog (ApplicationV2) ------- **/
+class AnnouncementsDialog extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
+  constructor({ pageId, parentApp } = {}) {
+    super({ id: `bol-announcements-${foundry.utils.randomID()}` });
+    this.pageId = pageId;
+    this.parentApp = parentApp;
+  }
+
+  static DEFAULT_OPTIONS = {
+    id: 'bol-announcements-dialog',
+    tag: 'form',
+    window: {
+      title: 'Announcements',
+      resizable: true,
+      minimizable: true
+    },
+    position: {
+      width: 500,
+      height: 'auto'
+    },
+    actions: {},
+    form: {
+      handler: undefined,
+      submitOnChange: false,
+      closeOnSubmit: false
+    }
+  };
+
+  static PARTS = {
+    form: {
+      template: 'modules/bag-of-lists/templates/announcements-dialog.hbs'
+    }
+  };
+
+  async _prepareContext() {
+    const state = window._fr_temp_state || getState();
+    const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+    
+    if (!page) {
+      return {
+        announcementTargets: [],
+        announcementAudienceOptions: [],
+        announcementSavedList: [],
+        announcementSelectedId: null,
+        gmAnnouncementAlerts: []
+      };
+    }
+    
+    const players = (game.users?.contents ?? game.users).filter(u => !u.isGM);
+    
+    const announcementTargets = page.factions.map(f => ({
+      id: f.id,
+      name: f.name
+    }));
+    
+    const announcementAudienceOptions = [
+      { id: 'gm', name: 'GM' },
+      { id: 'any-player', name: '🎯 Any Player (first to trigger)' },
+      { id: 'all-players', name: '👥 All Players' },
+      ...players.map(p => ({ id: p.id, name: p.name }))
+    ];
+    
+    const userNameLookup = new Map([
+      ['gm', 'GM'],
+      ['any-player', 'Any Player'],
+      ['all-players', 'All Players'],
+      ...players.map(p => [p.id, p.name])
+    ]);
+    
+    const gmAnnouncements = (page.announcements || []).map(announcement => {
+      const targetFaction = page.factions.find(f => f.id === announcement.factionId);
+      const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
+      const operatorSymbol = operatorKey === 'ge' ? '≥' : '≤';
+      const numericThreshold = Number(announcement.threshold);
+      const thresholdDisplay = Number.isFinite(numericThreshold) ? numericThreshold : (announcement.threshold ?? '');
+      const targets = Array.isArray(announcement.targets) && announcement.targets.length ? announcement.targets : ['gm'];
+      const targetNames = targets.map(t => userNameLookup.get(t) ?? 'Unknown');
+      const display = `${targetFaction?.name ?? 'Unknown Item'} ${operatorSymbol} ${thresholdDisplay} : ${announcement.message ?? ''}`.trim();
+      return {
+        id: announcement.id,
+        display,
+        targetSummary: targetNames.join(', '),
+        thresholdNumeric: Number.isFinite(numericThreshold) ? numericThreshold : null,
+        sendToChat: !!announcement.sendToChat
+      };
+    });
+    
+    let announcementSelectedId = window._fr_lastAnnouncementSelectedId;
+    if (!gmAnnouncements.some(ann => ann.id === announcementSelectedId)) {
+      announcementSelectedId = gmAnnouncements[0]?.id ?? null;
+    }
+    
+    // Build alerts
+    const gmAnnouncementAlerts = [];
+    const allPlayers = game.users.filter(u => !u.isGM && u.active);
+    
+    for (const ann of gmAnnouncements) {
+      if (ann.thresholdNumeric === null) continue;
+      const fullAnn = page.announcements.find(a => a.id === ann.id);
+      if (!fullAnn) continue;
+      const hits = [];
+      const targets = fullAnn.targets || [];
+      const isAnyPlayer = targets.includes('any-player');
+      const isAllPlayers = targets.includes('all-players');
+      
+      // Determine which players to check
+      let playersToCheck = [];
+      if (isAnyPlayer || isAllPlayers) {
+        playersToCheck = allPlayers.map(p => p.id);
+      } else {
+        playersToCheck = targets.filter(t => t !== 'gm');
+      }
+      
+      for (const targetId of playersToCheck) {
+        const rawValue = page.userRelations?.[targetId]?.[fullAnn.factionId];
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) continue;
+        const passes = fullAnn.operator === 'ge' ? value >= ann.thresholdNumeric : value <= ann.thresholdNumeric;
+        if (passes) {
+          hits.push({ targetId, value });
+        }
+      }
+      if (!hits.length) continue;
+      
+      // For any-player mode, only show if not already triggered (no dismissals)
+      if (isAnyPlayer && fullAnn.dismissedBy && Object.keys(fullAnn.dismissedBy).length > 0) continue;
+      
+      const detailText = hits.map(hit => {
+        const name = userNameLookup.get(hit.targetId) ?? game.users.get(hit.targetId)?.name ?? 'Unknown';
+        return `${name} (${hit.value})`;
+      }).join(', ');
+      
+      const prefix = isAnyPlayer ? '[Any] ' : (isAllPlayers ? '[All] ' : '');
+      gmAnnouncementAlerts.push({
+        id: ann.id,
+        display: prefix + ann.display,
+        details: detailText ? `Triggered by: ${detailText}` : '',
+        sendToChat: ann.sendToChat
+      });
+    }
+    
+    return {
+      announcementTargets,
+      announcementAudienceOptions,
+      announcementSavedList: gmAnnouncements,
+      announcementSelectedId,
+      gmAnnouncementAlerts,
+      highContrast: game.settings.get(MODULE_ID, 'highContrast')
+    };
+  }
+
+  _onRender(context, options) {
+    const html = this.element;
+    const $html = $(html);
+    
+    // Bring window to front
+    this.bringToFront();
+    
+    // Helper to populate form with announcement data for editing (defined early so we can use it)
+    const populateFormWithAnnouncement = (announcement) => {
+      // Set item dropdown
+      $html.find('#fr-announcement-target').val(announcement.factionId);
+      
+      // Set recipients
+      const recipientsSelect = $html.find('#fr-announcement-recipients')[0];
+      if (recipientsSelect) {
+        for (const opt of recipientsSelect.options) {
+          opt.selected = announcement.targets?.includes(opt.value) ?? false;
+        }
+      }
+      
+      // Set operator
+      const opButton = $html.find('#fr-announcement-operator')[0];
+      if (opButton) {
+        opButton.dataset.operator = announcement.operator || 'le';
+        opButton.textContent = announcement.operator === 'ge' ? '≥' : '≤';
+      }
+      
+      // Set threshold and message
+      $html.find('#fr-announcement-threshold').val(announcement.threshold ?? '');
+      $html.find('#fr-announcement-message').val(announcement.message ?? '');
+      
+      // Set chat options
+      $html.find('#fr-announcement-send-chat').prop('checked', !!announcement.sendToChat);
+      $html.find('#fr-announcement-chat-details').prop('checked', announcement.chatIncludeDetails !== false);
+      
+      // Set chat recipients
+      const chatRecipientsSelect = $html.find('#fr-announcement-chat-recipients')[0];
+      if (chatRecipientsSelect && Array.isArray(announcement.chatRecipients)) {
+        const recipientsSet = new Set(announcement.chatRecipients);
+        for (const opt of chatRecipientsSelect.options) {
+          opt.selected = recipientsSet.has(opt.value);
+        }
+      }
+    };
+    
+    // Check if we have a pending edit to populate
+    if (window._fr_editingAnnouncement) {
+      const announcement = window._fr_editingAnnouncement;
+      window._fr_editingAnnouncement = null;
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        populateFormWithAnnouncement(announcement);
+        // Update chat recipients visibility
+        const sendToChat = $html.find('#fr-announcement-send-chat').is(':checked');
+        $html.find('#fr-chat-recipients-row').toggle(sendToChat);
+        $html.find('#fr-announcement-message').focus();
+      }, 0);
+    }
+    
+    // Restore last selected recipients (only if not editing)
+    const recipientsSelectEl = $html.find('#fr-announcement-recipients')[0];
+    if (recipientsSelectEl && !window._fr_editingAnnouncement) {
+      const lastRecipients = Array.isArray(window._fr_lastAnnouncementRecipients) && window._fr_lastAnnouncementRecipients.length
+        ? window._fr_lastAnnouncementRecipients
+        : ['gm'];
+      const allowedValues = new Set(Array.from(recipientsSelectEl.options).map(opt => opt.value));
+      const appliedValues = lastRecipients.filter(value => allowedValues.has(value));
+      const selectionSet = new Set(appliedValues.length ? appliedValues : ['gm']);
+      for (const option of recipientsSelectEl.options) {
+        option.selected = selectionSet.has(option.value);
+      }
+    }
+    
+    // Toggle chat recipients row visibility based on send to chat checkbox
+    const updateChatRecipientsVisibility = () => {
+      const sendToChat = $html.find('#fr-announcement-send-chat').is(':checked');
+      $html.find('#fr-chat-recipients-row').toggle(sendToChat);
+    };
+    $html.find('#fr-announcement-send-chat').on('change', updateChatRecipientsVisibility);
+    updateChatRecipientsVisibility();
+    
+    // Operator toggle
+    $html.find('#fr-announcement-operator').on('click', (ev) => {
+      const button = ev.currentTarget;
+      const current = button.dataset.operator === 'ge' ? 'ge' : 'le';
+      const next = current === 'le' ? 'ge' : 'le';
+      button.dataset.operator = next;
+      button.textContent = next === 'ge' ? '≥' : '≤';
+    });
+    
+    // Recipients change
+    $html.find('#fr-announcement-recipients').on('change', (ev) => {
+      window._fr_lastAnnouncementRecipients = Array.from(ev.currentTarget.selectedOptions).map(opt => opt.value);
+    });
+    
+    // Add announcement
+    const addAnnouncement = async () => {
+      const selectEl = $html.find('#fr-announcement-target')[0];
+      const recipientsSelect = $html.find('#fr-announcement-recipients')[0];
+      const thresholdInput = $html.find('#fr-announcement-threshold')[0];
+      const messageInput = $html.find('#fr-announcement-message')[0];
+      const operatorButton = $html.find('#fr-announcement-operator')[0];
+      const sendToChatCheckbox = $html.find('#fr-announcement-send-chat')[0];
+      const chatDetailsCheckbox = $html.find('#fr-announcement-chat-details')[0];
+      const chatRecipientsSelect = $html.find('#fr-announcement-chat-recipients')[0];
+      
+      const factionId = selectEl?.value;
+      const operator = operatorButton?.dataset.operator === 'ge' ? 'ge' : 'le';
+      const thresholdValue = thresholdInput?.value?.trim() ?? '';
+      const threshold = Number(thresholdValue);
+      const message = messageInput?.value?.trim() ?? '';
+      const targets = Array.from(recipientsSelect?.selectedOptions ?? []).map(opt => opt.value);
+      const sendToChat = sendToChatCheckbox?.checked ?? false;
+      const chatIncludeDetails = chatDetailsCheckbox?.checked ?? true;
+      const chatRecipients = Array.from(chatRecipientsSelect?.selectedOptions ?? []).map(opt => opt.value);
+      
+      if (!factionId) return ui.notifications?.warn('Select an item to watch.');
+      if (!Number.isFinite(threshold)) return ui.notifications?.warn('Enter a numeric threshold.');
+      if (!message) return ui.notifications?.warn('Add a message for the announcement.');
+      if (!targets.length) return ui.notifications?.warn('Select at least one recipient.');
+      
+      const state = getState();
+      const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+      if (!page) return;
+      
+      page.announcements ||= [];
+      const newId = `announcement-${foundry.utils.randomID()}`;
+      page.announcements.push({
+        id: newId,
+        factionId,
+        operator,
+        threshold,
+        message,
+        targets,
+        sendToChat,
+        chatIncludeDetails,
+        chatRecipients: sendToChat ? (chatRecipients.length ? chatRecipients : ['gm']) : ['gm'],
+        dismissedBy: {}
+      });
+      
+      window._fr_lastAnnouncementRecipients = targets.slice();
+      window._fr_lastAnnouncementSelectedId = newId;
+      
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      
+      if (messageInput) messageInput.value = '';
+      if (thresholdInput) thresholdInput.value = '';
+      
+      this.render(true);
+      if (this.parentApp?.rendered) {
+        this.parentApp.render(true);
+      }
+      // Ensure window stays on top after render
+      setTimeout(() => this.bringToFront(), 10);
+    };
+    
+    $html.find('#fr-announcement-add').on('click', addAnnouncement);
+    $html.find('#fr-announcement-message, #fr-announcement-threshold').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        addAnnouncement();
+      }
+    });
+    
+    // Selection change
+    $html.find('#fr-announcement-saved').on('change', (ev) => {
+      window._fr_lastAnnouncementSelectedId = ev.currentTarget?.value || null;
+    });
+    
+    // Edit announcement - populate form with selected announcement data
+    $html.find('#fr-announcement-edit').on('click', async () => {
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const announcementId = selectEl?.value;
+      if (!announcementId) return ui.notifications?.warn('Select an announcement to edit.');
+      
+      const state = getState();
+      const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+      if (!page?.announcements) return;
+      
+      const announcement = page.announcements.find(a => a.id === announcementId);
+      if (!announcement) return;
+      
+      // Store the announcement data to populate after render
+      window._fr_editingAnnouncement = foundry.utils.duplicate(announcement);
+      
+      // Delete the original so it can be re-added with edits
+      const index = page.announcements.findIndex(a => a.id === announcementId);
+      if (index !== -1) {
+        page.announcements.splice(index, 1);
+      }
+      
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      
+      ui.notifications?.info('Editing announcement. Make changes and click "Add Announcement" to save.');
+      this.render(true);
+    });
+    
+    // Delete announcement
+    $html.find('#fr-announcement-delete').on('click', async () => {
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const announcementId = selectEl?.value;
+      if (!announcementId) return ui.notifications?.warn('Select an announcement to delete.');
+      
+      const state = getState();
+      const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+      if (!page?.announcements) return;
+      
+      const index = page.announcements.findIndex(a => a.id === announcementId);
+      if (index === -1) return;
+      
+      page.announcements.splice(index, 1);
+      const nextSelection = page.announcements[index] ?? page.announcements[index - 1] ?? null;
+      window._fr_lastAnnouncementSelectedId = nextSelection?.id ?? null;
+      
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      
+      this.render(true);
+      if (this.parentApp?.rendered) {
+        this.parentApp.render(true);
+      }
+      // Ensure window stays on top after render
+      setTimeout(() => this.bringToFront(), 10);
+    });
+    
+    // Duplicate announcement - creates copy and opens for editing
+    $html.find('#fr-announcement-duplicate').on('click', async () => {
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const announcementId = selectEl?.value;
+      if (!announcementId) return ui.notifications?.warn('Select an announcement to duplicate.');
+      
+      const state = getState();
+      const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+      if (!page?.announcements) return;
+      
+      const original = page.announcements.find(a => a.id === announcementId);
+      if (!original) return;
+      
+      // Populate form with the original data (for editing as new)
+      populateFormWithAnnouncement(original);
+      
+      // Update chat recipients visibility
+      const sendToChat = $html.find('#fr-announcement-send-chat').is(':checked');
+      $html.find('#fr-chat-recipients-row').toggle(sendToChat);
+      
+      // Focus message input
+      $html.find('#fr-announcement-message').focus();
+      
+      ui.notifications?.info('Duplicated to form. Make changes and click "Add Announcement" to save as new.');
+    });
+    
+    // Duplicate to specific item
+    $html.find('#fr-announcement-duplicate-to-item').on('click', async () => {
+      const selectEl = $html.find('#fr-announcement-saved')[0];
+      const targetItemSelect = $html.find('#fr-announcement-duplicate-target')[0];
+      const announcementId = selectEl?.value;
+      const targetFactionId = targetItemSelect?.value;
+      
+      if (!announcementId) return ui.notifications?.warn('Select an announcement to duplicate.');
+      if (!targetFactionId) return ui.notifications?.warn('Select a target item.');
+      
+      const state = getState();
+      const page = state.pages.find(p => p.id === this.pageId) || state.pages.find(p => p.id === state.activePageId);
+      if (!page?.announcements) return;
+      
+      const original = page.announcements.find(a => a.id === announcementId);
+      if (!original) return;
+      
+      if (original.factionId === targetFactionId) {
+        return ui.notifications?.warn('Select a different item to duplicate to.');
+      }
+      
+      const targetFaction = page.factions.find(f => f.id === targetFactionId);
+      const newId = `announcement-${foundry.utils.randomID()}`;
+      const duplicate = {
+        ...foundry.utils.duplicate(original),
+        id: newId,
+        factionId: targetFactionId,
+        dismissedBy: {}
+      };
+      page.announcements.push(duplicate);
+      window._fr_lastAnnouncementSelectedId = newId;
+      
+      await saveState(state);
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      
+      ui.notifications?.info(`Announcement duplicated to "${targetFaction?.name ?? 'item'}".`);
+      this.render(true);
+      if (this.parentApp?.rendered) {
+        this.parentApp.render(true);
+      }
+      // Ensure window stays on top after render
+      setTimeout(() => this.bringToFront(), 10);
+    });
+  }
+}
+
 /** ------- Faction Tracker App (ApplicationV2) ------- **/
 class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2) {
   constructor(options = {}) {
     super(options);
+
     this._isDragging = false; // Track dragging state to prevent renders
   }
   /** Inject custom SVG icon into header after render */
@@ -808,7 +2559,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     },
     position: {
       width: 900,
-      height: "auto"
+      height: 600
     },
     actions: {},
     form: {
@@ -875,20 +2626,42 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     const players = (game.users?.contents ?? game.users).filter(u => !u.isGM);
     const customEntries = state.customEntries;
     const gmRecipients = [
-      ...players.map(p => ({
-        id: p.id,
-        name: p.name,
-        isCustom: false,
-        isPlayer: true,
-        sharedToPlayers: false
-      })),
-      ...customEntries.map(entry => ({
-        id: entry.id,
-        name: entry.name,
-        isCustom: true,
-        isPlayer: false,
-        sharedToPlayers: !!entry.sharedToPlayers
-      }))
+      ...players.map(p => {
+        const imgConfig = normalizeImageConfig(state.recipientPrefs?.[p.id]?.imgConfig);
+        return {
+          id: p.id,
+          name: p.name,
+          img: p.character?.img || p.avatar || 'icons/svg/mystery-man.svg',
+          showIcon: state.recipientPrefs?.[p.id]?.showIcon ?? true,
+          isCustom: false,
+          isPlayer: true,
+          sharedToPlayers: false,
+          imgScale: imgConfig.scale,
+          imgOffsetX: imgConfig.offsetX,
+          imgOffsetY: imgConfig.offsetY,
+          imgEditorSize: imgConfig.editorSize,
+          imgBgEnabled: state.recipientPrefs?.[p.id]?.imgBgEnabled ?? false,
+          imgBgClass: state.recipientPrefs?.[p.id]?.imgBgClass || ''
+        };
+      }),
+      ...customEntries.map(entry => {
+        const imgConfig = normalizeImageConfig(entry.imgConfig);
+        return {
+          id: entry.id,
+          name: entry.name,
+          img: entry.img || 'icons/svg/mystery-man.svg',
+          showIcon: entry.showIcon ?? true,
+          isCustom: true,
+          isPlayer: false,
+          sharedToPlayers: !!entry.sharedToPlayers,
+          imgScale: imgConfig.scale,
+          imgOffsetX: imgConfig.offsetX,
+          imgOffsetY: imgConfig.offsetY,
+          imgEditorSize: imgConfig.editorSize,
+          imgBgEnabled: entry.imgBgEnabled ?? false,
+          imgBgClass: entry.imgBgClass || ''
+        };
+      })
     ];
 
     // Find active page
@@ -914,25 +2687,47 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     // Only use per-page data
     const gmFactions = activePage.factions.map(f => {
       const imgConfig = normalizeImageConfig(f.imgConfig);
+      const minValue = f.minValue ?? -50;
+      const maxValue = f.maxValue ?? 50;
+      
       const cells = gmRecipients.map(recipient => {
         const value = (activePage.userRelations?.[recipient.id]?.[f.id]) ?? 0;
-        const clamped = Math.max(-50, Math.min(50, Number(value) || 0));
-        const pct = Math.min(1, Math.max(0, Math.abs(clamped) / 50));
+        const clamped = Math.max(minValue, Math.min(maxValue, Number(value) || 0));
+        
+        // Calculate percentage for meter display
+        const range = maxValue - minValue;
+        let pct, posWidth, negWidth;
+        
+        if (minValue >= 0) {
+          // Positive-only mode
+          pct = range > 0 ? Math.min(1, Math.max(0, clamped / maxValue)) : 0;
+          posWidth = Math.round(pct * 50);
+          negWidth = 0;
+        } else {
+          // Standard mode with negative and positive values
+          pct = range > 0 ? Math.min(1, Math.max(0, Math.abs(clamped) / Math.max(Math.abs(minValue), Math.abs(maxValue)))) : 0;
+          posWidth = (clamped > 0) ? Math.round(pct * 50) : 0;
+          negWidth = (clamped < 0) ? Math.round(pct * 50) : 0;
+        }
         
         return {
           userId: recipient.id,
           isCustom: recipient.isCustom,
           value: clamped,
-          posWidth: (clamped > 0) ? Math.round(pct * 50) : 0,
-          negWidth: (clamped < 0) ? Math.round(pct * 50) : 0
+          posWidth,
+          negWidth
         };
       });
       return {
         id: f.id,
         name: f.name,
+        description: f.description || '',
+        linkedUuid: f.linkedUuid || '',
         img: f.img || "icons/svg/shield.svg",
         persistOnZero: !!f.persistOnZero,
         playerControlled: f.playerControlled ?? false,
+        minValue,
+        maxValue,
         imgBgEnabled: f.imgBgEnabled ?? false,
         imgBgClass: f.imgBgClass || '',
         imgScale: imgConfig.scale,
@@ -1065,6 +2860,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       let customSubTabs = [];
       let customActivePage = null;
       let announcementAlerts = [];
+      let permanentDismissals = [];
 
       if (activeTabType === 'page') {
         activePageId = activeTab.id;
@@ -1074,10 +2870,61 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           myFactions = activePlayerPage.factions.map(f => buildFactionDisplay(activePlayerPage, me.id, f)).filter(Boolean);
           activePageId = activePlayerPage.id;
           const basePage = state.pages.find(p => p.id === activePlayerPage.id);
-          if (basePage?.announcements?.length) {
+          
+          // Merge local dismissals with server state to handle race conditions
+          // But skip any announcements that were recently re-enabled by the player
+          const localState = window._fr_temp_state;
+          const localPage = localState?.pages?.find?.(p => p.id === activePlayerPage.id);
+          if (localPage?.announcements && basePage?.announcements) {
+            for (let i = 0; i < basePage.announcements.length; i++) {
+              const serverAnn = basePage.announcements[i];
+              const localAnn = localPage.announcements.find(a => a.id === serverAnn.id);
+              const reenableKey = `${basePage.id}-${serverAnn.id}`;
+              // Skip if this was recently re-enabled - let the server state take precedence
+              if (window._fr_recently_reenabled?.has(reenableKey)) {
+                continue;
+              }
+              if (localAnn?.dismissedBy?.[me.id]) {
+                serverAnn.dismissedBy ||= {};
+                serverAnn.dismissedBy[me.id] = localAnn.dismissedBy[me.id];
+              }
+            }
+          }
+          
+          // Collect permanently dismissed announcements for this player
+          if (basePage?.announcements) {
             for (const announcement of basePage.announcements) {
+              if (announcement.dismissedBy?.[me.id] === 'permanent') {
+                const faction = basePage.factions.find(f => f.id === announcement.factionId);
+                if (faction) {
+                  console.log(`[bag-of-lists] Found permanent dismissal for ${faction.name} announcement ${announcement.id}`);
+                  permanentDismissals.push({
+                    id: announcement.id,
+                    pageId: basePage.id,
+                    factionName: faction.name,
+                    message: announcement.message || 'No message'
+                  });
+                }
+              }
+            }
+          }
+          
+          if (basePage?.announcements?.length) {
+            console.log(`[bag-of-lists] Checking ${basePage.announcements.length} announcements for player ${me.id}`);
+            for (const announcement of basePage.announcements) {
+              console.log(`[bag-of-lists] Announcement ${announcement.id} dismissedBy:`, announcement.dismissedBy);
               const targets = Array.isArray(announcement.targets) && announcement.targets.length ? announcement.targets : ['gm'];
-              if (!targets.includes(me.id)) continue;
+              
+              // Check if this player should see the announcement based on targeting
+              const isAnyPlayer = targets.includes('any-player');
+              const isAllPlayers = targets.includes('all-players');
+              const isDirectlyTargeted = targets.includes(me.id);
+              
+              // For any-player: only show if no one has triggered it yet (check dismissedBy)
+              // For all-players: show to everyone
+              // For direct targeting: show only to targeted players
+              if (!isDirectlyTargeted && !isAnyPlayer && !isAllPlayers) continue;
+              
               const operatorKey = announcement.operator === 'ge' ? 'ge' : 'le';
               const operatorSymbol = operatorKey === 'ge' ? '≥' : '≤';
               const thresholdNumeric = Number(announcement.threshold);
@@ -1089,13 +2936,25 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
               if (!Number.isFinite(value)) continue;
               const passes = operatorKey === 'ge' ? value >= thresholdNumeric : value <= thresholdNumeric;
               if (!passes) continue;
-              if (announcement.dismissedBy?.[me.id]) continue;
+              
+              // For any-player, skip if anyone has already dismissed it
+              if (isAnyPlayer && announcement.dismissedBy && Object.keys(announcement.dismissedBy).length > 0) continue;
+              
+              // For regular targeting, skip if this user dismissed it (including permanent dismissals)
+              // Check for both temporary (true) and permanent ('permanent') dismissals
+              const userDismissal = announcement.dismissedBy?.[me.id];
+              if (userDismissal === true || userDismissal === 'permanent') {
+                console.log(`[bag-of-lists] Skipping announcement ${announcement.id} for ${faction.name} - dismissed by user (${userDismissal})`);
+                continue;
+              }
+              
               const message = `${faction.name} ${operatorSymbol} ${thresholdNumeric} : ${announcement.message ?? ''}`.trim();
               announcementAlerts.push({
                 id: announcement.id,
                 display: message,
                 value,
-                pageId: basePage.id
+                pageId: basePage.id,
+                sendToChat: !!announcement.sendToChat
               });
             }
           }
@@ -1138,6 +2997,15 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         customSubTabs,
         customActivePage,
         announcementAlerts,
+        permanentDismissals,
+        dismissalsCollapsed: window._fr_dismissals_collapsed ?? true,
+        settings: {
+          compactMode: game.settings.get(MODULE_ID, 'compactMode'),
+          largeFonts: game.settings.get(MODULE_ID, 'largeFonts'),
+          highContrast: game.settings.get(MODULE_ID, 'highContrast'),
+          showPlayerNames: game.settings.get(MODULE_ID, 'showPlayerNames'),
+          showTooltips: game.settings.get(MODULE_ID, 'showTooltips')
+        },
         backgroundOptions: [
           { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
           { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
@@ -1168,6 +3036,13 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
   announcementSelectedId,
       gmAnnouncementAlerts,
       hasCustomEntries: customEntries.length > 0,
+      settings: {
+        compactMode: game.settings.get(MODULE_ID, 'compactMode'),
+        largeFonts: game.settings.get(MODULE_ID, 'largeFonts'),
+        highContrast: game.settings.get(MODULE_ID, 'highContrast'),
+        showPlayerNames: game.settings.get(MODULE_ID, 'showPlayerNames'),
+        showTooltips: game.settings.get(MODULE_ID, 'showTooltips')
+      },
       backgroundOptions: [
         { class: 'fr-bg-gradient-blue', label: 'Blue Gradient' },
         { class: 'fr-bg-gradient-sunset', label: 'Sunset Gradient' },
@@ -1188,6 +3063,50 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     const html = this.element;
     const $html = $(html);
     
+    // Fix resize: ensure the window element has an explicit pixel height
+    // so the browser's resize handle works on the very first drag.
+    if (this.element) {
+      const appEl = this.element.closest('.application');
+      if (appEl) {
+        const computedH = appEl.getBoundingClientRect().height;
+        if (computedH > 0 && (!appEl.style.height || appEl.style.height === 'auto')) {
+          appEl.style.height = `${computedH}px`;
+        }
+      }
+    }
+    
+    // Apply image transforms for portraits
+    applyImageTransforms(html);
+    
+    // Sync sticky header offsets: the column header row must sit below the icon row
+    const iconRow = html.querySelector('.fr-character-icons-row');
+    if (iconRow) {
+      const headerRow = iconRow.nextElementSibling;
+      if (headerRow) {
+        const syncStickyOffset = () => {
+          const iconRowHeight = iconRow.offsetHeight;
+          headerRow.querySelectorAll('th').forEach(th => {
+            th.style.top = `${iconRowHeight}px`;
+          });
+        };
+        // Sync immediately and after images load (which may change row height)
+        syncStickyOffset();
+        iconRow.querySelectorAll('img').forEach(img => {
+          if (!img.complete) img.addEventListener('load', syncStickyOffset, { once: true });
+        });
+      }
+    }
+    
+    // Handle tooltips setting - remove data-tooltip attributes if disabled
+    const showTooltips = game.settings.get(MODULE_ID, 'showTooltips');
+    if (!showTooltips) {
+      $html.find('[data-tooltip]').each((_, el) => {
+        // Store the tooltip text in a different attribute in case we need it later
+        el.dataset.tooltipDisabled = el.dataset.tooltip;
+        el.removeAttribute('data-tooltip');
+      });
+    }
+    
     // Player: Up/down arrow handlers for playerControlled items
     $html.find('.fr-arrow-up').on('click', async (ev) => {
       const button = ev.currentTarget;
@@ -1200,10 +3119,13 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction || !faction.playerControlled) return;
+      
+      const maxValue = faction.maxValue ?? 50;
+      
       page.userRelations ||= {};
       page.userRelations[me.id] ||= {};
       let v = Number(page.userRelations[me.id][fid]) || 0;
-      v = Math.min(50, v + 1);
+      v = Math.min(maxValue, v + 1);
       page.userRelations[me.id][fid] = v;
       if (pageId) {
         state.activePageId = pageId;
@@ -1299,10 +3221,13 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction || !faction.playerControlled) return;
+      
+      const minValue = faction.minValue ?? -50;
+      
       page.userRelations ||= {};
       page.userRelations[me.id] ||= {};
       let v = Number(page.userRelations[me.id][fid]) || 0;
-      v = Math.max(-50, v - 1);
+      v = Math.max(minValue, v - 1);
       page.userRelations[me.id][fid] = v;
       if (pageId) {
         state.activePageId = pageId;
@@ -1329,6 +3254,63 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       this.render(true);
     });
 
+    // Player: Direct value input for playerControlled items
+    $html.find('.fr-player-value-input').on('change blur', async (ev) => {
+      const input = ev.currentTarget;
+      const fid = input.dataset.fid;
+      const state = window._fr_temp_state || getState();
+      const me = game.user;
+      const pageId = input.dataset.pageid || state.activePageId;
+      
+      // Find active page and faction
+      const page = (state.pages || []).find(p => p.id === pageId);
+      if (!page) return;
+      const faction = page.factions.find(f => f.id === fid);
+      if (!faction || !faction.playerControlled) return;
+      
+      const minValue = faction.minValue ?? -50;
+      const maxValue = faction.maxValue ?? 50;
+      
+      let v = Number(input.value) || 0;
+      v = Math.max(minValue, Math.min(maxValue, Math.round(v)));
+      
+      page.userRelations ||= {};
+      page.userRelations[me.id] ||= {};
+      page.userRelations[me.id][fid] = v;
+      
+      if (pageId) {
+        state.activePageId = pageId;
+      }
+      
+      // Save state to settings (if GM) or sync to GM
+      if (game.user.isGM) {
+        await saveState(state);
+        // Broadcast to players (without activePageId)
+        window.broadcastStateToPlayers(state);
+      } else {
+        // Sync to GM via socketlib - GM will save it
+        if (game.bagOfListsSocket) {
+          game.bagOfListsSocket.executeAsGM('playerValueChange', {
+            factionId: fid,
+            userId: me.id,
+            newValue: v,
+            pageId
+          });
+        }
+      }
+      
+      window._fr_temp_state = state;
+      this.render(true);
+    });
+    
+    // Player: Enter key submits value input
+    $html.find('.fr-player-value-input').on('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.currentTarget.blur();
+      }
+    });
+
     $html.find('.fr-announcement-dismiss').on('click', async (ev) => {
       ev.preventDefault();
       const button = ev.currentTarget;
@@ -1336,6 +3318,11 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const pageId = button.dataset.pageid;
       if (!announcementId || !pageId) return;
       const currentUserId = game.user.id;
+      
+      // Check if 'Do Not Show Again' is checked
+      const alertDiv = button.closest('.fr-announcement-alert');
+      const noShowCheckbox = alertDiv?.querySelector('.fr-announcement-no-show');
+      const permanentDismiss = noShowCheckbox?.checked ?? false;
 
       if (game.user.isGM) {
         const state = getState();
@@ -1344,10 +3331,15 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         const announcement = page.announcements?.find?.(ann => ann.id === announcementId);
         if (!announcement) return;
         announcement.dismissedBy ||= {};
-        if (currentUserId !== 'gm') {
+        if (permanentDismiss) {
+          // Permanent dismiss - mark as dismissed and don't reset
+          announcement.dismissedBy[currentUserId] = 'permanent';
+        } else if (currentUserId !== 'gm') {
           announcement.dismissedBy[currentUserId] = true;
         }
-        resetAnnouncementDismissalsForPage(page);
+        if (!permanentDismiss) {
+          resetAnnouncementDismissalsForPage(page);
+        }
         await saveState(state);
         const latestState = getState();
         window._fr_temp_state = latestState;
@@ -1365,7 +3357,7 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const localAnnouncement = localPage?.announcements?.find?.(ann => ann.id === announcementId);
       if (localAnnouncement) {
         localAnnouncement.dismissedBy ||= {};
-        localAnnouncement.dismissedBy[currentUserId] = true;
+        localAnnouncement.dismissedBy[currentUserId] = permanentDismiss ? 'permanent' : true;
       }
       this.render(true);
 
@@ -1374,7 +3366,8 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
           await game.bagOfListsSocket.executeAsGM('playerDismissAnnouncement', {
             announcementId,
             pageId,
-            userId: currentUserId
+            userId: currentUserId,
+            permanent: permanentDismiss
           });
         } catch (err) {
           logError('playerDismissAnnouncement failed', err);
@@ -1388,6 +3381,88 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         ui.notifications?.warn?.('Dismissal did not reach the GM—socket connection unavailable.');
       }
     });
+    
+    // Player: Toggle dismissals dropdown (persist state across re-renders)
+    $html.find('.fr-dismissals-header').on('click', (ev) => {
+      const header = ev.currentTarget;
+      const list = header.parentElement?.querySelector('.fr-dismissals-list');
+      const icon = header.querySelector('.fr-toggle-icon');
+      if (list) {
+        list.classList.toggle('fr-hidden');
+        window._fr_dismissals_collapsed = list.classList.contains('fr-hidden');
+        if (icon) {
+          icon.textContent = window._fr_dismissals_collapsed ? '▶' : '▼';
+        }
+      }
+    });
+    
+    // Player: Re-enable notification
+    $html.find('.fr-reenable-notification').on('click', async (ev) => {
+      ev.preventDefault();
+      const button = ev.currentTarget;
+      const announcementId = button.dataset.announcementId;
+      const pageId = button.dataset.pageid;
+      if (!announcementId || !pageId) return;
+      const currentUserId = game.user.id;
+
+      if (game.user.isGM) {
+        const state = getState();
+        const page = state.pages.find(p => p.id === pageId);
+        if (!page) return;
+        const announcement = page.announcements?.find?.(ann => ann.id === announcementId);
+        if (!announcement) return;
+        if (announcement.dismissedBy?.[currentUserId]) {
+          delete announcement.dismissedBy[currentUserId];
+        }
+        await saveState(state);
+        const latestState = getState();
+        window._fr_temp_state = latestState;
+        this.render(true);
+        return;
+      }
+
+      const hasSocket = !!game.bagOfListsSocket;
+      if (hasSocket) {
+        button.disabled = true;
+      }
+
+      const localState = window._fr_temp_state;
+      const localPage = localState?.pages?.find?.(p => p.id === pageId);
+      const localAnnouncement = localPage?.announcements?.find?.(ann => ann.id === announcementId);
+      if (localAnnouncement?.dismissedBy?.[currentUserId]) {
+        delete localAnnouncement.dismissedBy[currentUserId];
+      }
+      
+      // Mark as recently re-enabled to prevent merge from re-adding the dismissal
+      const reenableKey = `${pageId}-${announcementId}`;
+      window._fr_recently_reenabled?.add(reenableKey);
+      
+      this.render(true);
+
+      if (hasSocket) {
+        try {
+          await game.bagOfListsSocket.executeAsGM('playerReenableAnnouncement', {
+            announcementId,
+            pageId,
+            userId: currentUserId
+          });
+          // Clear from recently re-enabled after GM confirms (give it a moment for state to sync)
+          setTimeout(() => {
+            window._fr_recently_reenabled?.delete(reenableKey);
+          }, 2000);
+        } catch (err) {
+          logError('playerReenableAnnouncement failed', err);
+          ui.notifications?.error?.('Failed to re-enable notification. Please try again.');
+        } finally {
+          if (button.isConnected) {
+            button.disabled = false;
+          }
+        }
+      } else {
+        ui.notifications?.warn?.('Re-enable did not reach the GM—socket connection unavailable.');
+      }
+    });
+    
     // GM: Toggle playerControlled for a faction
     $html.find('.fr-player-control').on('change', async (ev) => {
       const fid = ev.currentTarget.dataset.fid;
@@ -1412,7 +3487,6 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.off('keydown', '.fr-val');
     $html.off('keydown', '#fr-new-name');
     $html.off('keydown', '.fr-rename-input');
-    $html.off('keydown', '#fr-new-custom-name');
     $html.find('.fr-tab').off('click');
     $html.find('#fr-add-page').off('click');
     $html.find('.fr-rename-page').off('click');
@@ -1421,21 +3495,200 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.find('#fr-del-page').off('click');
     $html.find('#fr-add').off('click');
     $html.find('#fr-new-name').off('keydown');
-    $html.find('#fr-add-custom').off('click');
-  $html.find('#fr-announcement-operator').off('click');
-  $html.find('#fr-announcement-add').off('click');
-  $html.find('#fr-announcement-message').off('keydown');
-  $html.find('#fr-announcement-threshold').off('keydown');
-  $html.find('#fr-announcement-recipients').off('change');
-    $html.find('#fr-announcement-saved').off('change');
-    $html.find('#fr-announcement-delete').off('click');
+    $html.find('#fr-open-announcements').off('click');
+    $html.find('.fr-edit-bag-btn').off('click');
+    $html.find('.fr-val-plus').off('click');
+    $html.find('.fr-val-minus').off('click');
+    $html.find('.fr-char-icon-wrapper').off('click');
+    $html.find('.fr-char-icon-edit').off('click');
     $html.find('.fr-del').off('click');
     $html.find('.fr-del-custom').off('click');
-  $html.find('.fr-img').off('click');
-  $html.find('.fr-img-edit').off('click');
+    $html.find('.fr-img').off('click');
+    $html.find('.fr-img-edit').off('click');
     $html.find('.fr-val').off('change blur');
     $html.find('.fr-share-custom').off('click');
     $html.find('.fr-custom-subtab').off('click');
+
+    // --- Open Announcements Modal ---
+    $html.find('#fr-open-announcements').on('click', (ev) => {
+      ev.preventDefault();
+      const state = window._fr_temp_state || getState();
+      const dialog = new AnnouncementsDialog({
+        pageId: state.activePageId,
+        parentApp: this
+      });
+      dialog.render(true);
+    });
+
+    // --- Open Archive Dialog ---
+    $html.find('#fr-open-archive').on('click', (ev) => {
+      ev.preventDefault();
+      const dialog = new ArchiveDialog({
+        parentApp: this
+      });
+      dialog.render(true);
+    });
+
+    // --- Edit Bag Button ---
+    $html.find('.fr-edit-bag-btn').on('click', (ev) => {
+      ev.preventDefault();
+      const fid = ev.currentTarget.dataset.fid;
+      const pageId = ev.currentTarget.dataset.pageid || getState().activePageId;
+      const state = window._fr_temp_state || getState();
+      const page = state.pages.find(p => p.id === pageId);
+      const faction = page?.factions?.find(f => f.id === fid);
+      if (!page || !faction) return;
+      
+      const dialog = new EditBagDialog({
+        pageId: page.id,
+        factionId: fid,
+        factionData: { ...faction },
+        parentApp: this,
+        isNew: false
+      });
+      dialog.render(true);
+    });
+
+    // --- Linked Name Click (Open UUID) ---
+    $html.find('.fr-name-link').on('click', async (ev) => {
+      ev.preventDefault();
+      const uuid = ev.currentTarget.dataset.uuid;
+      if (!uuid) return;
+      try {
+        const doc = await fromUuid(uuid);
+        if (doc?.sheet) {
+          doc.sheet.render(true);
+        } else {
+          ui.notifications?.warn('Could not open the linked item.');
+        }
+      } catch (err) {
+        logError('Failed to open linked UUID', err);
+        ui.notifications?.error('Invalid UUID or item not found.');
+      }
+    });
+
+    // --- UUID Link Button Click ---
+    $html.find('.fr-uuid-link-btn').on('click', async (ev) => {
+      ev.preventDefault();
+      const uuid = ev.currentTarget.dataset.uuid;
+      if (!uuid) return;
+      try {
+        const doc = await fromUuid(uuid);
+        if (doc?.sheet) {
+          doc.sheet.render(true);
+        } else {
+          ui.notifications?.warn('Could not open the linked item.');
+        }
+      } catch (err) {
+        logError('Failed to open linked UUID', err);
+        ui.notifications?.error('Invalid UUID or item not found.');
+      }
+    });
+
+    // --- +/- Value Buttons ---
+    $html.find('.fr-val-plus').on('click', async (ev) => {
+      ev.preventDefault();
+      const fid = ev.currentTarget.dataset.fid;
+      const uid = ev.currentTarget.dataset.uid;
+      const state = getState();
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (page) {
+        const faction = page.factions.find(f => f.id === fid);
+        const maxValue = faction?.maxValue ?? 50;
+        
+        page.userRelations ||= {};
+        page.userRelations[uid] ||= {};
+        let v = Number(page.userRelations[uid][fid]) || 0;
+        v = Math.min(maxValue, v + 1);
+        page.userRelations[uid][fid] = v;
+        resetAnnouncementDismissalsForPage(page);
+        
+        // Check and send chat messages for triggered announcements (only for this faction)
+        checkAndSendAnnouncementChatMessages(page, uid, fid);
+        
+        await saveState(state);
+        const latestState = getState();
+        window._fr_temp_state = latestState;
+        this.render(true);
+      }
+    });
+
+    $html.find('.fr-val-minus').on('click', async (ev) => {
+      ev.preventDefault();
+      const fid = ev.currentTarget.dataset.fid;
+      const uid = ev.currentTarget.dataset.uid;
+      const state = getState();
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (page) {
+        const faction = page.factions.find(f => f.id === fid);
+        const minValue = faction?.minValue ?? -50;
+        
+        page.userRelations ||= {};
+        page.userRelations[uid] ||= {};
+        let v = Number(page.userRelations[uid][fid]) || 0;
+        v = Math.max(minValue, v - 1);
+        page.userRelations[uid][fid] = v;
+        resetAnnouncementDismissalsForPage(page);
+        
+        // Check and send chat messages for triggered announcements (only for this faction)
+        checkAndSendAnnouncementChatMessages(page, uid, fid);
+        
+        await saveState(state);
+        const latestState = getState();
+        window._fr_temp_state = latestState;
+        this.render(true);
+      }
+    });
+
+    // --- Add Character Button ---
+    $html.find('#fr-add-character').on('click', (ev) => {
+      ev.preventDefault();
+      const dialog = new EditCharacterDialog({
+        recipientId: null,
+        recipientData: {},
+        parentApp: this,
+        isNew: true,
+        isCustom: true
+      });
+      dialog.render(true);
+    });
+
+    // --- Character Icon Click (Edit Character) ---
+    $html.find('.fr-char-icon-wrapper, .fr-char-icon-edit').on('click', (ev) => {
+      ev.preventDefault();
+      const uid = ev.currentTarget.dataset.uid;
+      const isCustom = ev.currentTarget.dataset.iscustom === 'true';
+      const state = window._fr_temp_state || getState();
+      
+      let recipientData = {};
+      if (isCustom) {
+        const entry = state.customEntries?.find(e => e.id === uid);
+        if (entry) {
+          recipientData = { ...entry };
+        }
+      } else {
+        const user = game.users?.get(uid);
+        if (user) {
+          recipientData = {
+            name: user.name,
+            img: user.character?.img || user.avatar || 'icons/svg/mystery-man.svg',
+            showIcon: state.recipientPrefs?.[uid]?.showIcon ?? true,
+            imgConfig: state.recipientPrefs?.[uid]?.imgConfig || defaultImageConfig(),
+            imgBgEnabled: state.recipientPrefs?.[uid]?.imgBgEnabled ?? false,
+            imgBgClass: state.recipientPrefs?.[uid]?.imgBgClass || ''
+          };
+        }
+      }
+      
+      const dialog = new EditCharacterDialog({
+        recipientId: uid,
+        recipientData,
+        parentApp: this,
+        isNew: false,
+        isCustom
+      });
+      dialog.render(true);
+    });
 
       // GM: Toggle persistOnZero for an item
       $html.find('.fr-persist').on('change', async (ev) => {
@@ -1627,42 +3880,14 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         if ($newInput.length && $renameBtn.length) {
           $renameBtn.hide();
           $newInput.show().focus();
+          // Select all text so user can immediately type to replace
+          const inputEl = $newInput[0];
+          if (inputEl && inputEl.select) {
+            inputEl.select();
+          }
         }
       }, 50);
     }
-
-    const addCustomEntry = async () => {
-      if (!game.user.isGM) return;
-      const nameInput = $html.find('#fr-new-custom-name')[0];
-      const name = nameInput?.value?.trim();
-      if (!name) {
-        return ui.notifications?.warn('Enter a custom entry name.');
-      }
-      const state = getState();
-      state.customEntries ||= [];
-      const newEntry = {
-        id: `custom-${foundry.utils.randomID()}`,
-        name,
-        sharedToPlayers: false
-      };
-      state.customEntries.push(newEntry);
-      await saveState(state);
-      const latestState = getState();
-      window._fr_temp_state = latestState;
-      if (nameInput) nameInput.value = '';
-      this.render(true);
-    };
-
-    $html.find('#fr-add-custom').on('click', (ev) => {
-      ev.preventDefault();
-      addCustomEntry();
-    });
-    $html.find('#fr-new-custom-name').on('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        addCustomEntry();
-      }
-    });
 
     const recipientsSelectEl = $html.find('#fr-announcement-recipients')[0];
     if (recipientsSelectEl) {
@@ -1858,6 +4083,58 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       log('info', 'Delete page clicked');
       const state = getState();
       if (state.pages.length <= 1) return ui.notifications?.warn("Cannot delete the last page.");
+      
+      // Check if user wants confirmation
+      const confirmEnabled = game.settings.get(MODULE_ID, 'confirmDeletePage');
+      
+      let confirmed = true;
+      if (confirmEnabled) {
+        // Show confirmation dialog with "Don't show again" option
+        const currentPage = state.pages.find(p => p.id === state.activePageId);
+        const pageName = currentPage?.name || 'this page';
+        
+        const dialog = await Dialog.wait({
+          title: 'Delete Page',
+          content: `
+            <div style="margin-bottom: 12px;">
+              <p style="margin-bottom: 8px;"><strong>Are you sure you want to delete "${pageName}"?</strong></p>
+              <p style="margin-bottom: 12px; color: #ff6b6b;">This will permanently delete the page and all items on it. This cannot be undone.</p>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="disable-confirmation" style="cursor: pointer;" />
+                <span>Don't ask me again (can re-enable in settings)</span>
+              </label>
+            </div>
+          `,
+          buttons: {
+            delete: {
+              icon: '<i class="fas fa-trash"></i>',
+              label: 'Delete Page',
+              callback: (html) => {
+                const disableConfirm = html.find('#disable-confirmation').is(':checked');
+                return { confirmed: true, disableConfirm };
+              }
+            },
+            cancel: {
+              icon: '<i class="fas fa-times"></i>',
+              label: 'Cancel',
+              callback: () => ({ confirmed: false, disableConfirm: false })
+            }
+          },
+          default: 'cancel'
+        });
+        
+        if (!dialog) {
+          confirmed = false;
+        } else {
+          confirmed = dialog.confirmed;
+          if (dialog.disableConfirm) {
+            await game.settings.set(MODULE_ID, 'confirmDeletePage', false);
+          }
+        }
+      }
+      
+      if (!confirmed) return;
+      
       const idx = state.pages.findIndex(p => p.id === state.activePageId);
       if (idx >= 0) {
         state.pages.splice(idx, 1);
@@ -1880,8 +4157,22 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const state = getState();
       const page = state.pages.find(p => p.id === state.activePageId);
       if (page) {
+  // Get default values from settings
+  const defaultImg = game.settings.get(MODULE_ID, 'defaultItemImage') || 'icons/svg/shield.svg';
+  const defaultMin = game.settings.get(MODULE_ID, 'defaultMinValue') ?? -50;
+  const defaultMax = game.settings.get(MODULE_ID, 'defaultMaxValue') ?? 50;
+  
   // Default persistOnZero to false (GM can enable per item)
-  page.factions.push({ id: foundry.utils.randomID(), name, img: 'icons/svg/shield.svg', persistOnZero: false, playerControlled: false, imgConfig: defaultImageConfig() });
+  page.factions.push({ 
+    id: foundry.utils.randomID(), 
+    name, 
+    img: defaultImg, 
+    persistOnZero: false, 
+    playerControlled: false, 
+    imgConfig: defaultImageConfig(),
+    minValue: defaultMin,
+    maxValue: defaultMax
+  });
         await saveState(state);
         // Fetch latest state and use for next render
         const latestState = getState();
@@ -1903,6 +4194,36 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const fid = ev.currentTarget.dataset.fid;
       log('info', 'Delete faction clicked', { factionId: fid });
       if (!fid) return;
+      
+      // Check if confirmation is enabled
+      const confirmEnabled = game.settings.get(MODULE_ID, 'confirmDeleteItem');
+      const showArchiveReminder = game.settings.get(MODULE_ID, 'showArchiveReminder');
+      
+      let confirmed = true;
+      if (confirmEnabled) {
+        const state = getState();
+        const page = state.pages.find(p => p.id === state.activePageId);
+        const item = page?.factions?.find(f => f.id === fid);
+        const itemName = item?.name || 'this item';
+        
+        const archiveReminderText = showArchiveReminder 
+          ? '<p style="margin-bottom: 8px; color: #4caf50;">💡 Tip: You can archive items instead of deleting them using the Archive button.</p>'
+          : '';
+        
+        confirmed = await Dialog.confirm({
+          title: 'Delete Item',
+          content: `
+            <div>
+              <p style="margin-bottom: 8px;">Are you sure you want to delete <strong>"${itemName}"</strong>?</p>
+              <p style="margin-bottom: 8px; color: #ff6b6b;">This will permanently remove the item and all associated data.</p>
+              ${archiveReminderText}
+            </div>
+          `
+        });
+      }
+      
+      if (!confirmed) return;
+      
       // Always fetch latest state from settings
       const state = getState();
       const page = state.pages.find(p => p.id === state.activePageId);
@@ -1926,19 +4247,19 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.find('.fr-img-bg-toggle').on('change', async (ev) => {
       const fid = ev.currentTarget.dataset.fid;
       const enabled = ev.currentTarget.checked;
-      const globalState = getState();
-      const localActivePageId = window._fr_temp_state?.activePageId || globalState.activePageId;
-      const page = globalState.pages.find(p => p.id === localActivePageId);
+      const state = window._fr_temp_state || getState();
+      const localActivePageId = ev.currentTarget.dataset.pageid || state.activePageId;
+      const page = state.pages.find(p => p.id === localActivePageId);
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction) return;
       // Optimistic local update
       faction.imgBgEnabled = enabled;
       // Preserve player's active page if different from GM's
-      window._fr_temp_state = { ...globalState, activePageId: localActivePageId };
+      window._fr_temp_state = { ...state, activePageId: localActivePageId };
       this.render(true);
       if (game.user.isGM) {
-        await saveState(globalState);
+        await saveState(state);
       } else if (game.bagOfListsSocket) {
         game.bagOfListsSocket.executeAsGM('updateFactionBackground', {
           pageId: localActivePageId,
@@ -1952,21 +4273,21 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
     $html.find('.fr-bg-option').on('click', async (ev) => {
       const fid = ev.currentTarget.dataset.fid;
       const bgClass = ev.currentTarget.dataset.bgclass || '';
-      const globalState = getState();
-      const localActivePageId = window._fr_temp_state?.activePageId || globalState.activePageId;
-      const page = globalState.pages.find(p => p.id === localActivePageId);
+      const state = window._fr_temp_state || getState();
+      const localActivePageId = ev.currentTarget.dataset.pageid || state.activePageId;
+      const page = state.pages.find(p => p.id === localActivePageId);
       if (!page) return;
       const faction = page.factions.find(f => f.id === fid);
       if (!faction) return;
       faction.imgBgClass = bgClass;
       if (bgClass && !faction.imgBgEnabled) faction.imgBgEnabled = true;
-      window._fr_temp_state = { ...globalState, activePageId: localActivePageId }; // optimistic
+      window._fr_temp_state = { ...state, activePageId: localActivePageId }; // optimistic
       // Close dropdown
       const dd = ev.currentTarget.closest('.fr-bg-dropdown');
       if (dd) dd.classList.remove('open');
       this.render(true);
       if (game.user.isGM) {
-        await saveState(globalState);
+        await saveState(state);
       } else if (game.bagOfListsSocket) {
         game.bagOfListsSocket.executeAsGM('updateFactionBackground', {
           pageId: localActivePageId,
@@ -2095,27 +4416,37 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
       const input = ev.currentTarget;
       const fid = input.dataset.fid;
       const uid = input.dataset.uid;
-      let v = Number(input.value) || 0;
-      v = Math.max(-50, Math.min(50, Math.round(v)));
-      log('info', 'Faction value changed', { factionId: fid, userId: uid, value: v });
-      // Always fetch latest state from settings
+      
+      // Get faction's min/max settings
       const state = getState();
       const page = state.pages.find(p => p.id === state.activePageId);
-      if (page) {
-        page.userRelations ||= {};
-        page.userRelations[uid] ||= {};
-        page.userRelations[uid][fid] = v;
-        resetAnnouncementDismissalsForPage(page);
-        await saveState(state);
-        // Fetch latest state and use for next render
-        const latestState = getState();
-        window._fr_temp_state = latestState;
-        if (game.user.isGM && game.socket) {
-          console.log('[FactionTracker] socket emit (numeric change)', latestState);
-          game.socket.emit('module.bag-of-lists', latestState, {broadcast: true});
-        }
-        this.render(true);
+      if (!page) return;
+      
+      const faction = page.factions.find(f => f.id === fid);
+      const minValue = faction?.minValue ?? -50;
+      const maxValue = faction?.maxValue ?? 50;
+      
+      let v = Number(input.value) || 0;
+      v = Math.max(minValue, Math.min(maxValue, Math.round(v)));
+      log('info', 'Faction value changed', { factionId: fid, userId: uid, value: v });
+      
+      page.userRelations ||= {};
+      page.userRelations[uid] ||= {};
+      page.userRelations[uid][fid] = v;
+      resetAnnouncementDismissalsForPage(page);
+      
+      // Check and send chat messages for triggered announcements (only for this faction)
+      checkAndSendAnnouncementChatMessages(page, uid, fid);
+      
+      await saveState(state);
+      // Fetch latest state and use for next render
+      const latestState = getState();
+      window._fr_temp_state = latestState;
+      if (game.user.isGM && game.socket) {
+        console.log('[FactionTracker] socket emit (numeric change)', latestState);
+        game.socket.emit('module.bag-of-lists', latestState, {broadcast: true});
       }
+      this.render(true);
     });
 
     // Initialize drag and drop functionality
@@ -2176,313 +4507,206 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
    * Initialize drag and drop functionality for both table rows and cards
    */
   _initializeDragAndDrop($html) {
-    // Only allow drag and drop for GM (tables) and players with player-controlled factions (cards)
+    // Only allow drag and drop for GM
     const isGM = !!game.user.isGM;
-    // Reordering should be GM-only per new requirement
-    if (!isGM) return; // Disable entirely for players
+    if (!isGM) return;
     
-    // Get draggable elements based on view
-  const draggableSelector = '.fr-drag-handle';
+    const draggableSelector = '.fr-drag-handle';
     const $draggables = $html.find(draggableSelector);
+    if ($draggables.length === 0) return;
 
-    if ($draggables.length === 0) {
-      return; // No draggable elements found
-    }
-
-    console.log(`[FactionTracker] Drag and drop initialized: ${$draggables.length} draggable elements`);
-
-    // Clean up any existing drag event handlers to prevent accumulation
+    // Clean up any existing drag event handlers
     $draggables.off('mousedown.drag-reorder');
     
-    let draggedElement = null;
-    let draggedIndex = null;
-    let draggedData = null;
-    let ghostElement = null;
-    let placeholder = null;
-    let dropZone = null;
+    // Drag state
+    let drag = null;
 
-    // Helper function to create ghost element
-    const createGhostElement = (originalElement) => {
-      if (isGM) {
-        // For GM view, create a simplified version of the table row
-        const tableRow = originalElement.closest('tr');
-        const factionName = tableRow.querySelector('.fr-name')?.textContent || 'Faction';
-        const factionImg = tableRow.querySelector('.fr-img')?.src || 'icons/svg/shield.svg';
-        
-        // Create a simplified ghost that looks like a faction item
-        const ghost = document.createElement('div');
-        ghost.classList.add('fr-drag-ghost', 'fr-ghost-table-row');
-        ghost.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #23232b; border: 2px solid #b48e5a; border-radius: 6px; min-width: 200px;">
-            <img src="${factionImg}" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover;" />
-            <span style="color: #fff; font-weight: 600;">${factionName}</span>
-          </div>
-        `;
-        
-        document.body.appendChild(ghost);
-        return ghost;
-      } else {
-        // For player view, clone the card but make it smaller
-        const ghost = originalElement.cloneNode(true);
-        ghost.classList.add('fr-drag-ghost', 'fr-ghost-card');
-        ghost.style.transform = 'scale(0.9)';
-        ghost.style.maxWidth = '200px';
-        
-        document.body.appendChild(ghost);
-        return ghost;
-      }
+    // Create a ghost element that follows the cursor
+    const createGhost = (row) => {
+      const name = row.querySelector('.fr-name')?.textContent || 'Item';
+      const img = row.querySelector('.fr-img')?.src || 'icons/svg/shield.svg';
+      
+      const ghost = document.createElement('div');
+      ghost.className = 'fr-drag-ghost';
+      ghost.style.cssText = 'position:fixed; pointer-events:none; z-index:9999;';
+      ghost.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; background:#23232b; border:2px solid #b48e5a; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+          <img src="${img}" style="width:28px; height:28px; border-radius:4px; object-fit:cover;" />
+          <span style="color:#fff; font-weight:600;">${name}</span>
+        </div>
+      `;
+      document.body.appendChild(ghost);
+      return ghost;
     };
 
-    // Helper function to create placeholder
+    // Create a placeholder indicator (thin line)
     const createPlaceholder = () => {
-      const placeholder = document.createElement('div');
-      placeholder.classList.add('fr-drop-placeholder');
-      
-      if (isGM) {
-        placeholder.classList.add('fr-placeholder-table-row');
-        placeholder.innerHTML = '<div style="text-align: center;">Drop here</div>';
-        // For table, we need to create a full table row
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = 999; // Span all columns
-        td.appendChild(placeholder);
-        tr.appendChild(td);
-        return tr;
-      } else {
-        placeholder.classList.add('fr-placeholder-card');
-        placeholder.innerHTML = '<div>Drop here</div>';
-        return placeholder;
-      }
+      const tr = document.createElement('tr');
+      tr.className = 'fr-drop-placeholder';
+      tr.innerHTML = '<td colspan="999"><div style="height:3px; background:#b48e5a; margin:2px 0; border-radius:2px;"></div></td>';
+      return tr;
     };
 
-    // Helper function to get faction data from element
-    const getFactionDataFromElement = (element) => {
-      if (isGM) {
-        // For drag handles, get the table row and find faction ID from any input in the row
-        const tableRow = element.closest('tr');
-        const factionInput = tableRow ? tableRow.querySelector('[data-fid]') : null;
-        return factionInput ? factionInput.dataset.fid : null;
-      } else {
-        // For cards, get faction ID from arrow buttons or other elements
-        const factionElement = element.querySelector('[data-fid]');
-        return factionElement ? factionElement.dataset.fid : null;
-      }
+    // Get visible rows only (excluding placeholder AND hidden row)
+    const getVisibleRows = () => {
+      if (!drag?.tbody) return [];
+      return Array.from(drag.tbody.querySelectorAll('tr:not(.fr-drop-placeholder):not(.fr-drag-hidden)'));
     };
 
-    // Helper function to get drop index from mouse position
-    const getDropIndex = (clientY) => {
-      if (!dropZone) return 0;
+    // Determine drop position based on mouse Y
+    // Returns the INSERT INDEX - where to splice in the array AFTER removing the dragged item
+    const getTargetIndex = (mouseY) => {
+      const visibleRows = getVisibleRows();
       
-      const container = dropZone;
-      // Get all visible elements (excluding placeholder and hidden dragged element)
-      const elements = Array.from(container.children).filter(el => 
-        !el.classList.contains('fr-drop-placeholder') && 
-        !el.classList.contains('fr-drag-hidden') &&
-        el.style.display !== 'none'
-      );
-
-      // If no elements, return 0
-      if (elements.length === 0) return 0;
-
-      for (let i = 0; i < elements.length; i++) {
-        const rect = elements[i].getBoundingClientRect();
+      if (visibleRows.length === 0) return 0;
+      
+      // Find where cursor is among visible rows
+      // visualInsertPos: 0 = before first visible, 1 = after first, etc.
+      let visualInsertPos = 0;
+      for (let i = 0; i < visibleRows.length; i++) {
+        const rect = visibleRows[i].getBoundingClientRect();
         const midpoint = rect.top + rect.height / 2;
         
-        // If mouse is above the midpoint of this element, insert before it
-        if (clientY < midpoint) {
-          return i;
-        }
-      }
-      
-      // If we're past all elements, insert at the end
-      return elements.length;
-    };
-
-    // Helper function to update placeholder position
-    let currentPlaceholderIndex = -1;
-    const updatePlaceholderPosition = (clientY) => {
-      if (!placeholder || !dropZone || !this._isDragging) return;
-
-      try {
-        const newIndex = getDropIndex(clientY);
-        
-        // Only update if index actually changed
-        if (newIndex === currentPlaceholderIndex) return;
-        
-        const container = dropZone;
-        
-        // Check if container still exists and is valid
-        if (!container || !container.parentNode) return;
-        
-        // Get all visible elements (excluding placeholder and hidden dragged element)
-        const elements = Array.from(container.children).filter(el => 
-          !el.classList.contains('fr-drop-placeholder') &&
-          !el.classList.contains('fr-drag-hidden') &&
-          el.style.display !== 'none'
-        );
-        
-        // Remove existing placeholder safely
-        if (placeholder.parentNode === container) {
-          container.removeChild(placeholder);
-        }
-
-        // Insert placeholder at new position
-        if (newIndex >= elements.length) {
-          // Insert at the end
-          container.appendChild(placeholder);
+        if (mouseY >= midpoint) {
+          visualInsertPos = i + 1;
         } else {
-          // Insert before the element at newIndex
-          const targetElement = elements[newIndex];
-          if (targetElement && targetElement.parentNode === container) {
-            container.insertBefore(placeholder, targetElement);
-          } else {
-            // Fallback: append at end if target element is invalid
-            container.appendChild(placeholder);
-          }
+          break;
         }
-        
-        currentPlaceholderIndex = newIndex;
-        
-      } catch (error) {
-        console.warn('[FactionTracker] Error updating placeholder position:', error);
       }
+      
+      // The visualInsertPos is the position in the visible (shortened) array
+      // This is exactly the index we need to splice into after removing the dragged item
+      return visualInsertPos;
     };
 
-    // Mouse move handler with throttling
-    let lastMoveTime = 0;
-    const handleMouseMove = (e) => {
-      if (!ghostElement || !draggedElement || !this._isDragging) return;
+    // Position the placeholder in the DOM to show where drop will occur
+    const positionPlaceholder = (insertIndex) => {
+      if (insertIndex === drag.lastTargetIndex) return;
       
-      // Throttle mouse move events to improve performance
-      const now = Date.now();
-      if (now - lastMoveTime < 16) return; // ~60fps
-      lastMoveTime = now;
+      const { placeholder, tbody } = drag;
+      const visibleRows = getVisibleRows();
       
-      // Update ghost position
-      ghostElement.style.left = e.clientX - 100 + 'px';
-      ghostElement.style.top = e.clientY - 30 + 'px';
+      // Remove from current position
+      placeholder.remove();
+      
+      // Insert placeholder at the visual position
+      // insertIndex 0 = before first visible row
+      // insertIndex N = after Nth visible row (before N+1th, or at end)
+      if (insertIndex >= visibleRows.length) {
+        tbody.appendChild(placeholder);
+      } else {
+        tbody.insertBefore(placeholder, visibleRows[insertIndex]);
+      }
+      
+      drag.lastTargetIndex = insertIndex;
+    };
+
+    // Handle mouse movement during drag
+    const onMouseMove = (e) => {
+      if (!drag) return;
+      
+      // Move ghost with cursor
+      drag.ghost.style.left = `${e.clientX + 15}px`;
+      drag.ghost.style.top = `${e.clientY - 10}px`;
       
       // Update placeholder position
-      updatePlaceholderPosition(e.clientY);
+      const targetIndex = getTargetIndex(e.clientY);
+      positionPlaceholder(targetIndex);
     };
 
-    // Mouse up handler  
-    const handleMouseUp = (e) => {
-      if (!draggedElement || !placeholder || !this._isDragging) return;
+    // Handle mouse release - complete the drag
+    const onMouseUp = () => {
+      if (!drag) return;
       
-      // Calculate final drop index
-      const finalIndex = getDropIndex(e.clientY);
+      const { ghost, placeholder, tbody, draggedRow, originalIndex, factionId, lastTargetIndex } = drag;
       
-      // Clean up UI elements
-      if (ghostElement && ghostElement.parentNode) {
-        ghostElement.parentNode.removeChild(ghostElement);
-        ghostElement = null;
-      }
-      
-      if (placeholder && placeholder.parentNode) {
-        placeholder.parentNode.removeChild(placeholder);
-        placeholder = null;
-      }
-      
-      if (dropZone) {
-        dropZone.classList.remove('fr-drop-zone');
-        dropZone = null;
-      }
-      
-      // Restore text selection
+      // Clean up DOM
+      ghost.remove();
+      placeholder.remove();
+      tbody.classList.remove('fr-drop-zone');
+      draggedRow.classList.remove('fr-drag-hidden');
       document.body.style.userSelect = '';
       
-      // Remove global event listeners
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      // Remove listeners
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
       
-      // Reset dragging flag and placeholder index
+      // The lastTargetIndex is already the correct final position
+      const finalIndex = lastTargetIndex;
+      
+      // Clear state
       this._isDragging = false;
-      currentPlaceholderIndex = -1;
+      drag = null;
       
-      // Only proceed with reordering if position changed
-      if (finalIndex !== draggedIndex && draggedData) {
-        // Trigger reorder function (element will be shown after re-render)
-        this._reorderFactions(draggedData, draggedIndex, finalIndex);
-      } else {
-        // No reorder needed, show original element immediately
-        if (draggedElement) {
-          draggedElement.classList.remove('fr-drag-hidden');
-        }
+      // Reorder if position changed
+      if (finalIndex !== originalIndex && factionId) {
+        this._reorderFactions(factionId, originalIndex, finalIndex);
       }
-      
-      // Reset drag state
-      draggedElement = null;
-      draggedIndex = null;
-      draggedData = null;
     };
 
-    // Add drag event listeners to each draggable element using namespaced events for clean removal
+    // Start drag on mousedown
     $draggables.on('mousedown.drag-reorder', (e) => {
-      const element = e.currentTarget;
-      
-      // For GM view, prevent dragging if not clicking on drag handle
-      if (isGM && !e.target.closest('.fr-drag-handle')) {
-        return;
-      }
-      
-      // For player view, prevent dragging if clicking on interactive elements
-      if (!isGM && e.target.matches('input, button, .fr-del, .fr-img, .fr-checkbox')) {
-        return;
-      }
-
-      // Prevent multiple drags
+      if (e.button !== 0) return; // Left click only
+      if (!e.target.closest('.fr-drag-handle')) return;
       if (this._isDragging) return;
-
-        e.preventDefault();
-        
-        this._isDragging = true;
-        
-        // For GM view, get the table row; for player view, use the card directly
-        draggedElement = isGM ? element.closest('tr') : element;
-        draggedIndex = Array.from(draggedElement.parentNode.children).indexOf(draggedElement);
-        draggedData = getFactionDataFromElement(element);
-        
-        // Validate we have required data
-        if (!draggedData) {
-          this._isDragging = false;
-          return;
-        }
-        
-        ghostElement = createGhostElement(element);
-        
-        placeholder = createPlaceholder();
-        
-        dropZone = isGM ? $html.find('.fr-table tbody')[0] : $html.find('.fr-grid')[0];
-        if (dropZone) {
-          dropZone.classList.add('fr-drop-zone');
-        }
-        
-        // Hide original element (use draggedElement, not element)
-        draggedElement.classList.add('fr-drag-hidden');
-        
-        // Position ghost at cursor
-        const rect = element.getBoundingClientRect();
-        ghostElement.style.left = e.clientX - rect.width / 2 + 'px';
-        ghostElement.style.top = e.clientY - rect.height / 2 + 'px';
-        
-        // Insert initial placeholder using current mouse position
-        currentPlaceholderIndex = -1;
-        updatePlaceholderPosition(e.clientY);
-        
-        // Add global mouse event listeners
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        
-        // Prevent text selection
-        document.body.style.userSelect = 'none';
+      
+      e.preventDefault();
+      
+      const row = e.currentTarget.closest('tr');
+      const tbody = row?.parentNode;
+      const factionId = row?.dataset?.fid;
+      
+      if (!row || !tbody || !factionId) return;
+      
+      // Get the original index
+      const allRows = Array.from(tbody.querySelectorAll('tr'));
+      const originalIndex = allRows.indexOf(row);
+      if (originalIndex === -1) return;
+      
+      this._isDragging = true;
+      
+      // Create visual elements
+      const ghost = createGhost(row);
+      const placeholder = createPlaceholder();
+      
+      // Position ghost at cursor
+      ghost.style.left = `${e.clientX + 15}px`;
+      ghost.style.top = `${e.clientY - 10}px`;
+      
+      // Hide original row and mark container
+      row.classList.add('fr-drag-hidden');
+      tbody.classList.add('fr-drop-zone');
+      
+      // Insert placeholder at original position
+      tbody.insertBefore(placeholder, row);
+      
+      // Initialize drag state
+      drag = {
+        ghost,
+        placeholder,
+        tbody,
+        draggedRow: row,
+        originalIndex,
+        factionId,
+        lastTargetIndex: originalIndex
+      };
+      
+      // Prevent text selection
+      document.body.style.userSelect = 'none';
+      
+      // Listen for drag events
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
     });
   }
 
   /**
    * Reorder factions in the data and persist changes
+   * @param {string} factionId - ID of faction being moved
+   * @param {number} fromIndex - Original index in array
+   * @param {number} toIndex - Insert position in the shortened array (after removal)
    */
-  async _reorderFactions(factionId, oldIndex, newIndex) {
+  async _reorderFactions(factionId, fromIndex, toIndex) {
     // Only allow GM to reorder factions
     if (!game.user.isGM) {
       console.warn('[FactionTracker] Only GM can reorder factions');
@@ -2498,37 +4722,34 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
         return;
       }
 
-      // Find the faction being moved
-      const factionIndex = page.factions.findIndex(f => f.id === factionId);
-      if (factionIndex === -1) {
-        console.warn('[FactionTracker] Faction not found for reordering:', factionId);
+      // Validate indices
+      if (fromIndex < 0 || fromIndex >= page.factions.length) {
+        console.warn('[FactionTracker] Invalid fromIndex:', fromIndex);
         return;
       }
 
-      // Remove faction from old position
-      const [faction] = page.factions.splice(factionIndex, 1);
+      // Remove item from original position
+      const [faction] = page.factions.splice(fromIndex, 1);
       
-      // Insert at new position (adjust for removal)
-      let insertIndex = newIndex;
-      if (factionIndex < newIndex) {
-        insertIndex = newIndex - 1;
-      }
+      // toIndex is already the correct insert position for the shortened array
+      // Clamp to valid range
+      const insertAt = Math.max(0, Math.min(toIndex, page.factions.length));
       
-      page.factions.splice(insertIndex, 0, faction);
+      page.factions.splice(insertAt, 0, faction);
       
       // Save state and sync
       await saveState(state);
       
-      // Update temp state and re-render (scroll position preserved by render override)
+      // Update temp state and re-render
       const latestState = getState();
       window._fr_temp_state = latestState;
       this.render(true);
       
-      log('info', 'Faction reordered successfully', { 
+      log('info', 'Faction reordered', { 
         factionId, 
-        factionName: faction.name,
-        oldIndex: factionIndex, 
-        newIndex: insertIndex 
+        name: faction.name,
+        from: fromIndex, 
+        insertAt 
       });
       
     } catch (error) {
@@ -2540,6 +4761,11 @@ class FactionTrackerApp extends foundry.applications.api.HandlebarsApplicationMi
 
 /** ------- Make the app available and add Scene Controls tool ------- **/
 Hooks.once("ready", () => {
+  // If socketlib.ready hasn't fired yet, initialize temp state now
+  if (typeof window._fr_temp_state === 'undefined' || window._fr_temp_state === null) {
+    window._fr_temp_state = getState();
+  }
+  
   game.factionTracker = new FactionTrackerApp();
   // Register the openTracker function for use by the Scene Controls button
   game.factionRelations = {
@@ -2560,22 +4786,45 @@ Hooks.on("getSceneControlButtons", (controls) => {
   try {
     let group = controls.tokens || controls.find?.(g => g.name === "tokens" || g.name === "token");
     if (group) {
-      if (!group.tools || typeof group.tools !== "object") group.tools = {};
+      if (!group.tools || typeof group.tools !== 'object') {
+        group.tools = {};
+      }
       group.tools["faction-tracker"] = {
         name: "faction-tracker",
         title: "Bag o' Lists",
-  icon: "bol-toolbar-icon",
+        icon: "bol-toolbar-icon",
+        order: Object.keys(group.tools).length,
         button: true,
         visible: true,
-        onChange: () => {
-          game.factionRelations.openTracker();
+        onChange: (event, active) => {
+          game.factionRelations?.openTracker?.();
         }
       };
-    } else {
-      console.warn("Faction Relations: Could not find tokens group to add tool");
     }
   } catch (err) {
-    console.error(`${MODULE_ID} Scene Controls error:`, err);
+    console.error(`[bag-of-lists] Scene Controls error:`, err);
   }
 });
+
+// Workaround for V13.350+ where onChange callback doesn't fire for button-type scene control tools
+// Manually attach click handler after controls are rendered
+Hooks.on("renderSceneControls", (controls, html) => {
+  try {
+    const element = html instanceof jQuery ? html[0] : (html?.element || html);
+    const ourButton = element?.querySelector?.('[data-tool="faction-tracker"]');
+    if (ourButton) {
+      ourButton.removeEventListener('click', handleButtonClick);
+      ourButton.addEventListener('click', handleButtonClick);
+    }
+  } catch (err) {
+    console.error('[bag-of-lists] Error in renderSceneControls:', err);
+  }
+});
+
+function handleButtonClick(event) {
+  console.log('[bag-of-lists] Button clicked via DOM event handler!');
+  event.preventDefault();
+  event.stopPropagation();
+  game.factionRelations?.openTracker?.();
+}
 

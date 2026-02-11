@@ -1,3 +1,5 @@
+# Bag o' Lists – *Track, Share, and Sync Custom Lists in Foundry VTT*
+
 ## License
 
 This module is licensed under a [Creative Commons Attribution-NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
@@ -5,7 +7,7 @@ This module is licensed under a [Creative Commons Attribution-NonCommercial 4.0 
 This work is also subject to the [Foundry Virtual Tabletop EULA - Limited License Agreement for module development](https://foundryvtt.com/article/license/).
 
 ## Description
-A Foundry VTT module for tracking and sharing customizable lists such as factions, resources, reputations, or crafting supplies between the GM and players. Bag o' Lists lets you track values for each player or NPC, update everything in real time with socketlib, and use a flexible interface with custom images, backgrounds, and a portrait editor. GMs can create multiple bags (tabs), add items with unique images, choose whether items are player-controlled or GM-only, and set items to stay visible or disappear at zero. The module includes an announcement system for alerts based on item values, supports custom recipient tabs, and makes it easy to share information between player and GM. All changes are synchronized instantly for everyone, making it useful for campaign management, reputation tracking, or any game that needs interactive lists.
+**Bag o' Lists** is a versatile module for Foundry VTT that lets GMs and players create, share, and manage multiple customizable lists—perfect for tracking factions, resources, crafting materials, ammunition, and more. With real-time updates powered by socketlib, every change is instantly synced across all users.
 
 ## About & Motivation
 
@@ -17,7 +19,7 @@ Thank you again so much for everyone creating and adding to the community, as we
 
 **Support:** [ko-fi.com/lunatheturtle](https://ko-fi.com/lunatheturtle)
 
-## Usage Instructions
+## How It Works
 
 1. **Install & Enable:**
 	- Download and install Bag o' Lists from the Foundry VTT module browser or manually add it to your modules folder.
@@ -46,15 +48,17 @@ Thank you again so much for everyone creating and adding to the community, as we
 
 ## Features
 
-- Track multiple customizable lists ("bags") for factions, resources, ammunition, crafting, or anything your table needs.
-- Per-page data: each bag is its own tab with separate items and values.
-- GM and player views: GMs see all data and controls, players see only their relevant info.
-- Items can disappear at zero or persist, based on GM setting (great for tracking expendable or craftable resources).
-- Player-controlled items: allow players to adjust values directly.
-- Custom recipients: create NPCs, factions, or friendlies as "players" the GM can update, then broadcast their standing to real players through shared tabs with per-page subtabs.
-- Announcement triggers: store per-page reminders that watch any item in the tracker, target specific players/the GM, and surface the alert automatically to everyone selected once the value crosses the ≤/≥ threshold.
-- WYSIWYG portrait editor: zoom and reposition images inside a live 1:1 preview so the table portrait always matches what you see in the editor.
-- Real-time updates for all users using socketlib.
+- **Create and manage multiple "bags" (tabs)** for any purpose, such as factions, resources, NPCs, and more.
+- **Add custom images** to items with a built-in portrait editor for zoom and repositioning.
+- **GM and player views:** GMs see and control all data, players see only their relevant lists.
+- **Items can disappear at zero or persist,** based on GM settings.
+- **Player-controlled items:** let players adjust values directly with arrows or typed input.
+- **Real-time updates** for all users using socketlib.
+- **Dedicated edit dialogs** for items and characters with UUID linking to access the items from the UI.
+- **Announcement system** with chat integration, custom thresholds, and player targeting.
+- **Archive system** for storing, exporting, and importing entries. This allows what NPCs or Factions are used to be modular and storable.
+- **12 configurable settings** for accessibility, display, and workflow preferences.
+- **Player notification management** with permanent dismissals that can be re-enabled.
 
 ## Support
 For questions, feature requests or bug reports, please open an issue [here](https://github.com/Luna-the-Turtle/Bag-o-Lists/issues).
@@ -62,114 +66,250 @@ For questions, feature requests or bug reports, please open an issue [here](http
 ---
 
 ## Module Showcase
-A full module showcase can be seen at this youtube link: https://youtu.be/nGGm2M9jqu8
+A full module showcase can be seen at this youtube link: https://youtu.be/nGGm2M9jqu8  
+
+***This video is for the last version release of the module and is not up to date. It will be updated at a later time.***
 
 ---
 
 ## Screenshots & Usage Examples
 
 ### 1. Opening the Tracker
-You can see the button has been added to the scene controls on the left. It will look like this.
+Click the bag icon in the left Scene Controls toolbar to open or close the Bag o' Lists tracker.
+
+**The Scene Controls Button:** You can see the button has been added to the scene controls on the left.
 
 ![Scene Controls Button](images/scene-controls-button.png)
 
-Here you can see the tracker being opened.
+**Opening the Tracker:** Here you can see the tracker being opened and closed.
 
-![Opening Tracker](images/opening_tracker.gif)
-
----
-
-### 2. Creating & Managing Lists
-**Make New Bags:**
-Create new pages ("bags") for different lists or trackers. The following shows the process of making new bags.
-
-![Make New Bags](images/make_new_bags.gif)
-
-**Adding Items:**
-Add new items to any bag. Items can represent factions, resources, or anything you want to track.
-
-![Adding Items](images/adding_items.gif)
-
-**Renaming Bags:**
-Rename any bag directly from the UI for better organization.
-
-![Renaming Bag](images/renaming_bag.gif)
-
-**Deleting Tabs:**
-Remove a bag or a player's tab as needed. This first delete shown will remove it everywhere for all players as well as the GM. The second delete shown will remove it for that player only.
-
-![Delete Tabs](images/deleting_bags_deleting_for_player.gif)
+![Opening Tracker](images/opening-tracker.gif)
 
 ---
 
-### 3. Customizing Items & Player Controls
-**Adding Images:**
-Choose custom images for your items. Use the portrait editor to zoom, reposition, and crop images for a perfect fit.
+### 2. GM & Player Views
+GMs can see and manage all lists, add items, and customize images. Players see only their relevant lists and items.
 
-![Adding Images](images/adding_images.gif)
+**GM View:** The GM can see all data, controls, and items across every bag.
 
-**Backgrounds & Repositioning:**
-Adjust item backgrounds and reposition images for clarity and style. The backgrounds are made to work well with .png format.
+![GM Tracker View](images/gm-tracker-view.png)
 
-![Backgrounds & Reposition](images/backgrounds_reposition.gif)
+**Player View:** Players see only the bags and items relevant to them.
 
-Players can adjust them as well!
+![Player Tracker View](images/player-tracker-view.png)
 
-![Players Choose](images/players_choose.gif)
+**Resizable Window:** Change the window size so that it is viewed the way you want.
 
-**Set Values for Players:**
-GMs can set values for each player or custom entry.
-
-![Set Values for Players](images/set_values_for_players.gif)
-
-**New Custom Player:**
-Add custom recipients (NPCs, groups, etc.) to track alongside players. 
-
-![New Custom Player](images/new_custom_player.gif)
-
-**Share Custom Entry:**
-GMs can share these custom entries with players, making them visible as dedicated tabs.
-
-![Share Custom Entry](images/share_custom_entry.gif)
-
-**Players Can View Shared Entries:**
-Players can select the shared custom entry to see it's tracked values with existing bags. 
-
-![Players View Custom Entry](images/players_view_custom_entry.gif)
-
-This functionality allows the GM to create a cross-matrix of custom entries with existing bags so that the player can as in my example see the relationship that an NPC has with in world factions.
----
-
-### 4. Announcements & Alerts
-**Announcement System:**
-Set up announcements to alert players or the GM when item values cross a threshold. Announcements are dismissible and will reappear if the condition is met again. 
-
-![Announcement System](images/announcement_system.gif)
-
-This allows the GM to set up permanent messages to appear for when a Reputation level threshold is obtained or when a Consumable runs low.
-
-**Reoccurring Announcements:**
-See how announcements can be triggered multiple times as values change.
-
-![Reoccurring Announcements](images/reoccurring_announcements.gif)
-
-This allows a player that crafts their own consumables to have the announcement stay even when the item is used up and then resupplied.
+![Player Tracker View 2](images/player-tracker-view2.png)
 
 ---
 
-### 5. Item Tracking Features
-**Player Tracked Values:**
-Players can adjust item values using their arrows. This works with the persist on 0 state, allowing a player to manually track and resupply the item if it is recovered through crafting or rest.
+### 3. Creating & Managing Lists
+Create new bags and items, rename or delete tabs, and customize each list for your table's needs.
 
-![Player Tracked Values](images/persist_on_0.gif)
+**Create a New Bag & Add Items:** Create new pages ("bags") for different lists or trackers, and add new items to any bag. Items can represent factions, resources, or anything you want to track.
+
+![Add Tab & Item](images/add-tab-add-item.gif)
+
+**Delete Tabs:** Remove a bag or a player's tab as needed. The delete action shown removes it for all players and the GM. The delete under the player name in the column will delete it for that player only.
+
+![Delete Tabs](images/delete-tab.gif)
+
+---
+
+### 4. Character Icons & Column Alignment
+The GM view displays character portraits above the table, perfectly aligned with their corresponding data columns. Click any portrait to edit the character, or use the **+** button to add new characters or custom entries.
+
+**Character Portraits Above Columns:** Portraits align with their data columns and are interactive.
+
+![Character Icons Row](images/character-icons-row.gif)
+
+---
+
+### 5. Edit Item Dialog
+Click the ✏️ button on any item to open the **Edit Item Dialog**. From here you can configure:
+- **Name & Description** — add a description that shows as a tooltip and preview in the table.
+- **Linked Item (UUID)** — link to any Foundry document; drag items from the sidebar or paste a UUID. Linked names become clickable to open the document.
+- **Custom Icon** — pick an image and adjust framing with the built-in portrait editor.
+- **Background Color** — toggle a background and choose from gradient or solid color presets.
+- **Persist @ 0** — keep the item visible to players even at zero value.
+- **Player Controlled** — allow players to adjust the value themselves.
+- **Custom Value Range** — set a custom min/max range (e.g., 0–100 for resources, -50 to +50 for reputation).
+- **Delete** — permanently remove the item from the bag.
+
+**The Edit Item Dialog:**
+
+![Edit Item Dialog](images/edit-item-dialog.png)
+
+---
+
+### 6. Edit Character Dialog
+Click any character portrait or the ✏️ icon to open the **Edit Character Dialog**.
+***Note: These are already ported from the player character sheets, so it is mainly for custom entries that are added by the GM.***
+Configure:
+- **Name** — set or change the display name.
+- **Icon** — choose a custom image and adjust framing.
+- **Show Icon** — toggle whether the character icon displays in the header row.
+- **Background Color** — enable and select a background color for the portrait.
+- **Delete** — remove custom characters (player characters can be removed via the table header).
+
+**The Edit Character Dialog:**
+
+![Edit Character Dialog](images/edit-character-dialog.png)
+
+---
+
+### 7. Customizing Items
+Choose your own images for item portraits using the built-in portrait editor. Zoom, reposition, and crop images for a perfect fit. Select from gradient and solid background colors for visual flair.
+
+**Choose an Image, Background, and Reposition:** Select an image, pick a background color, and reposition to get the look you want.
+
+![Choosing Images, Reposition, and Backgrounds](images/image-framing-backgrounds.gif)
+
+**Players Can Adjust Backgrounds Too:** Players can adjust backgrounds on their own cards as well!
+
+![Players Choose](images/players-choose.gif)
+
+---
+
+### 8. GM Value Controls
+GMs can set values for each player using the number input, or quickly adjust with the **+** and **−** buttons directly in each table cell. Values respect the item's custom min/max range.
+
+**Setting Values for Players:**
+
+![GM Value Controls](images/gm-value-controls.gif)
+
+---
+
+### 9. Item Descriptions & UUID Linking
+Add descriptions to items that display as a tooltip preview in both GM and player views. Link items to any Foundry document via UUID—item names become clickable links that open the linked document's sheet. Drag and drop items from the Foundry sidebar directly into the UUID field.
+
+**Linking Items via UUID:** Drag and drop or paste a UUID to link any Foundry document. Linked names become clickable.
+
+![UUID Linking](images/uuid-linking.gif)
+
+---
+
+### 10. Custom Characters & Shared Entries
+Add custom recipients (NPCs, groups, etc.) to track alongside players using the **+** button in the character icons row. Share custom entries with players using the **Share** button—shared entries appear as dedicated player tabs with per-page subtabs.
+
+**Creating and Sharing a Custom Entry:** Add a custom NPC or group, then share it so players can see its values across all bags.
+
+![Share Custom Entry](images/share-custom-entry.gif)
+
+Players can view shared entries across all bags!
+
+**In this example shown, it means the Player can see the Faction Reputation that the NPC has with the same in-world Factions that the Player has Reputation with.**
+
+---
+
+### 11. Announcements & Alerts
+Access the announcement system through the **📢 Announcements** button (with a live alert badge showing active alert count). The dedicated Announcements Dialog lets you:
+
+- **Create announcements** targeting specific items with ≤/≥ threshold conditions.
+- **Target recipients** — select individual players, "Any Player" (first to trigger), or "All Players."
+- **Custom messages** for each announcement.
+- **Send to Chat** — optionally post triggered announcements to the Foundry chat, with selectable chat recipients (GM Only, Everyone, or specific players) and an "Include Details" toggle.
+- **Manage saved announcements** — edit, duplicate, delete, or duplicate to a different item.
+
+**The Announcements Dialog:** Set up announcements with item thresholds, target recipients, and custom messages.
+
+![Announcements Dialog](images/announcements-dialog.png)
+
+**Announcements Sent to Chat:** Triggered announcements can be posted to Foundry's chat log for all selected recipients to see.
+
+![Announcement Chat Messages](images/announcement-chat-messages.gif)
+
+**Reoccurring Announcements:** Announcements are dismissible and will reappear if the condition is met again.
+
+![Reoccurring Announcements](images/reoccurring-announcements.gif)
+
+This way you can have the announcement as a focus for either the Bag o' Lists UI or using Foundry's Chat Log!
+
+---
+
+### 12. Player Notification Management
+Players can manage their announcement notifications with three levels of control:
+
+- **Dismiss** — temporarily hide an alert for the current session.
+- **"Do Not Show This Again"** — permanently dismiss a specific notification while still receiving chat messages.
+- **Re-enable** — bring back previously dismissed notifications from the collapsible "Disabled Notifications" panel.
+
+***Note: If a dismissed notification is re-enabled, then the GM or Player will need to increment/decrement the value above/below the conditional to have the notification apply again. I tried multiple times to work around this issue, but it was more tricky than the time warranted.***
+
+**Managing Player Notifications:** Dismiss, permanently disable, or re-enable notifications.
+
+![Player Notification Dismissal](images/player-notification-dismissal.gif)
+
+---
+
+### 13. Archive System
+Access the archive through the **📦 Archive** button. The Archive Dialog lets you:
+
+- **Archive entries** — move items to storage to keep your active list clean.
+- **Restore entries** — bring archived items back to the active list.
+- **Export archive** — save your archive to a JSON file for backup or sharing.
+- **Import archive** — load archived entries from a JSON file.
+- **Permanently delete** — remove archived entries when no longer needed.
+
+**Archive and Restore:** Archive items to storage and bring them back as needed.
+
+![Archive and Re-enable](images/archive-reenable.gif)
+
+**Export and Import:** Save your current archive state as a JSON export and import it back when needed.
+
+![Export and Import](images/export-import.gif)
+
+---
+
+### 14. Item Tracking Features
+**Player-Controlled Values:**
+Players can adjust item values using up/down arrows or type values directly into the input field. This works with persist-on-zero, allowing a player to manually track and resupply items through crafting or rest.
+
+![Player Tracked Values](images/player-tracked-values.gif)
 
 **Persist on Zero:**
-Shows item remaining after reaching 0, then the final item disappearing as it reaches 0. This allows an item to remain if fully consumed like the bombs in this example, so a player that crafts the item regularly can still see the item or category. However a unique or finite resource like the poison in my example will disappear when the consumable runs out.
+Items with "Persist @ 0" remain visible to players even at zero value—perfect for craftable or resupplied consumables. Items without it disappear when reaching zero, great for unique or finite resources.
 
-![Persist on Zero](images/persist_on_0.gif)
+![Persist on Zero](images/persist-on-zero.gif)
 
-**Real-Time Updates:**
-All changes are synced instantly to all users via socketlib.
+**Drag-and-Drop Reordering:**
+Reorder items in the GM view by dragging the ⋮⋮ handle on any row.
+
+![Drag and Drop Reorder](images/drag-and-drop-reorder.gif)
+
+---
+
+### 15. Settings & Accessibility
+Bag o' Lists includes 12 configurable settings accessible from Foundry's Module Settings:
+
+**Confirmation Settings:**
+- Confirm before deleting pages/bags
+- Confirm before deleting items
+- Confirm before importing archives
+
+**Default Settings:**
+- Default minimum and maximum value range for new items
+- Default item image (with file picker)
+- Show archive reminder when deleting items
+
+**Display Settings:**
+- **Compact Mode** — reduces spacing and font sizes to fit more content
+- **Large Fonts** — increases font sizes for readability
+- **Show Player Names** — toggle character names above portraits and in table headers
+- **Show Tooltips** — enable/disable helpful hover tooltips on all controls
+
+**Accessibility Settings:**
+- **High Contrast Mode** — bolder borders and higher contrast colors for improved visibility
+
+**Configuring Module Settings:** All settings are accessible from Foundry's Module Settings panel.
+
+![Module Settings](images/module-settings.gif)
+
+---
+
+### 16. Real-Time Sync
+All changes are synced instantly to all users via socketlib—including value changes, announcement triggers, notification dismissals, and archive operations. This can be seen in many of the prior example videos.
 
 ---
 
@@ -181,10 +321,13 @@ All changes are synced instantly to all users via socketlib.
 
 ## Asset Credits
 
+
 This module uses the backpack icon from the PF2e system for Foundry VTT, created and maintained by the PF2e System Developers:
 - PF2e System: https://github.com/foundryvtt/pf2e
 - License: Paizo Community Use Policy (https://paizo.com/community/communityuse)
 - Icon: styles/backpack.svg
+
+"Bag o' Lists" is not published, endorsed, or specifically approved by Paizo. For more information about Paizo Inc. and Paizo products, visit https://paizo.com.
 
 All images used for Bag o' Lists usage examples (screenshots and gifs) were obtained from [Pixabay](https://pixabay.com/) as free-use images with no royalty requirements. A full list of image sources is documented in `images/Attribution.md` in this repository.
 
@@ -206,6 +349,25 @@ All images used for Bag o' Lists usage examples (screenshots and gifs) were obta
 - https://pixabay.com/vectors/vampire-vampiric-witch-gothic-5431457/
 - https://pixabay.com/vectors/person-fantasy-magic-mask-157130/
 
+
 For full attribution and direct links, see `images/Attribution.md`.
 
-"Bag o' Lists" is not published, endorsed, or specifically approved by Paizo. For more information about Paizo Inc. and Paizo products, visit https://paizo.com.
+---
+
+## User Contributor Credits
+
+The following users provided feedback, suggestions, or issue reports that directly led to improvements and new features in Bag o' Lists. Thank you for helping make this module better for everyone!
+
+**DeviousHearts**  
+Professional UX designer who provided detailed mock-ups, interface suggestions, and a comprehensive review of the module's user experience. Their feedback led to improvements in the UI, dialog layouts, and overall usability.  
+
+**naaggynerd**  
+Suggested customizable min/max value ranges, positive-only tracking, and requested a character sheet tab for easier access. Their ideas inspired new configuration options and added features. 
+
+**noblue123**  
+Provided extensive suggestions for faction tracker use cases, including enhanced announcement functionality, item descriptions, improved input controls, archive management, and UI scalability. Many of these ideas have been incorporated into recent updates.
+
+If you have suggestions or find issues, please open an issue on GitHub—your feedback is always welcome and appreciated!
+
+---
+

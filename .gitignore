@@ -1,10 +1,22 @@
+# Ignore everything by default
+*
 
-FrontEndDescription.txt
-Coming Updates.txt
-# OS files
+# Allow the folders and files that should be published
+!.gitignore
+!images/
+!images/**
+!scripts/
+!scripts/**
+!styles/
+!styles/**
+!templates/
+!templates/**
+!LICENSE
+!module.json
+!README.md
+
+# Always ignore OS and editor files even inside allowed folders
 .DS_Store
 Thumbs.db
-
-# Editor files
 .vscode/
 .idea/

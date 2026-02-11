@@ -1,94 +1,84 @@
-{{!-- Faction Tracker Full UI --}}
-<div class="faction-tracker">
-  <div class="fr-tabs">
+{{!-- Faction Tracker Full UI - v2.0 --}}
+<div class="faction-tracker" data-compact="{{settings.compactMode}}" data-large-fonts="{{settings.largeFonts}}" data-high-contrast="{{settings.highContrast}}" data-show-player-names="{{settings.showPlayerNames}}" data-show-tooltips="{{settings.showTooltips}}">
+  {{!-- Tabs Section with Add Bag button on right --}}
+  <div class="fr-tabs-container">
     {{#if isGM}}
-      {{#each pages}}
-        <span class="fr-tab-group">
-          <button class="fr-tab{{#if (eq ../activePageId id)}} active{{/if}}" data-type="page" data-pageid="{{id}}">{{name}}</button>
-          <button class="fr-rename-page" data-pageid="{{id}}" title="Rename Page">✏️</button>
-          <input class="fr-rename-input" data-pageid="{{id}}" type="text" value="{{name}}" />
-        </span>
-      {{/each}}
-  <button id="fr-add-page" title="Add Page">Create a Bag!</button>
-    {{else}}
-      {{#each playerTabs}}
-        <button class="fr-tab{{#if (eq ../activeTabKey key)}} active{{/if}}{{#if (eq type 'custom')}} fr-tab-custom{{/if}}" data-type="{{type}}" data-pageid="{{#if (eq type 'page')}}{{id}}{{/if}}" data-customid="{{#if (eq type 'custom')}}{{id}}{{/if}}">{{name}}</button>
-      {{/each}}
+      <button id="fr-del-page" class="fr-delete-bag-btn" title="Delete Current Page" data-tooltip="Delete the current page">🗑️</button>
+    {{/if}}
+    <div class="fr-tabs-scroll">
+      {{#if isGM}}
+        {{#each pages}}
+          <span class="fr-tab-group">
+            <button class="fr-tab{{#if (eq ../activePageId id)}} active{{/if}}" data-type="page" data-pageid="{{id}}" data-tooltip="Switch to {{name}}">{{name}}</button>
+            <button class="fr-rename-page" data-pageid="{{id}}" title="Rename Page" data-tooltip="Rename this page">✏️</button>
+            <input class="fr-rename-input" data-pageid="{{id}}" type="text" value="{{name}}" />
+          </span>
+        {{/each}}
+      {{else}}
+        {{#each playerTabs}}
+          <button class="fr-tab{{#if (eq ../activeTabKey key)}} active{{/if}}{{#if (eq type 'custom')}} fr-tab-custom{{/if}}" data-type="{{type}}" data-pageid="{{#if (eq type 'page')}}{{id}}{{/if}}" data-customid="{{#if (eq type 'custom')}}{{id}}{{/if}}">{{name}}</button>
+        {{/each}}
+      {{/if}}
+    </div>
+    {{#if isGM}}
+      <button id="fr-add-page" class="fr-add-bag-btn" title="Add Page" data-tooltip="Create a new bag/tab">+ Create a Bag!</button>
     {{/if}}
   </div>
+
   {{#if isGM}}
-    <div class="fr-toolbar">
-  <input id="fr-new-name" type="text" placeholder="New Item Name" />
-  <button id="fr-add" type="button">Add to List!</button>
-  <button id="fr-del-page" title="Delete Page">🗑️</button>
-    </div>
-    <div class="fr-recipient-toolbar">
-      <input id="fr-new-custom-name" type="text" placeholder="New Custom Entry" />
-      <button id="fr-add-custom" type="button">Add Custom Entry</button>
-    </div>
-    <div class="fr-announcement-toolbar">
-      <span class="fr-announcement-title">Announce</span>
-      <select id="fr-announcement-target" {{#unless announcementTargets.length}}disabled{{/unless}}>
-        {{#if announcementTargets.length}}
-          {{#each announcementTargets}}
-            <option value="{{id}}">{{name}}</option>
-          {{/each}}
-        {{else}}
-          <option value="" disabled selected>No items available</option>
+    {{!-- GM Toolbar --}}
+    <div class="fr-toolbar-main">
+      <span style="display:inline-flex; flex:1;" data-tooltip="Enter name for new item">
+        <input id="fr-new-name" type="text" placeholder="New Item Name" style="flex:1;" />
+      </span>
+      <button id="fr-add" type="button" data-tooltip="Add item to the current bag">Add to List!</button>
+      <button id="fr-open-announcements" class="fr-announcements-btn" type="button" data-tooltip="Manage announcements and alerts">
+        📢 Announcements
+        {{#if gmAnnouncementAlerts.length}}
+          <span class="fr-alert-badge">{{gmAnnouncementAlerts.length}}</span>
         {{/if}}
-      </select>
-      <select id="fr-announcement-recipients" multiple size="3" {{#unless announcementAudienceOptions.length}}disabled{{/unless}}>
-        {{#each announcementAudienceOptions}}
-          <option value="{{id}}">{{name}}</option>
-        {{/each}}
-      </select>
-      <button id="fr-announcement-operator" type="button" data-operator="le" title="Toggle threshold direction">≤</button>
-      <input id="fr-announcement-threshold" type="number" placeholder="Value" />
-      <input id="fr-announcement-message" type="text" placeholder="Announcement message" />
-      <button id="fr-announcement-add" type="button" {{#unless announcementTargets.length}}disabled{{/unless}}>Add Announcement</button>
+      </button>
+      <button id="fr-open-archive" class="fr-archive-btn" type="button" data-tooltip="Manage entry archive">
+        📦 Archive
+      </button>
     </div>
-    <div class="fr-announcement-controls">
-      <select id="fr-announcement-saved" {{#unless announcementSavedList.length}}disabled{{/unless}}>
-        {{#if announcementSavedList.length}}
-          {{#each announcementSavedList}}
-            <option value="{{id}}" {{#if (eq ../announcementSelectedId id)}}selected{{/if}}>{{display}}{{#if targetSummary}} — {{targetSummary}}{{/if}}</option>
-          {{/each}}
-        {{else}}
-          <option value="" disabled selected>No announcements saved</option>
-        {{/if}}
-      </select>
-      <button id="fr-announcement-delete" type="button" {{#unless announcementSavedList.length}}disabled{{/unless}}>Delete</button>
-    </div>
-    {{#if gmAnnouncementAlerts.length}}
-      <div class="fr-announcement-alerts">
-        {{#each gmAnnouncementAlerts}}
-          <div class="fr-announcement-alert">
-            <span class="fr-announcement-alert-text">{{display}}</span>
-            {{#if details}}
-              <span class="fr-announcement-alert-meta">{{details}}</span>
-            {{/if}}
-          </div>
-        {{/each}}
-      </div>
-    {{/if}}
+
+    {{!-- Main Table --}}
     <div class="fr-table-container">
       <table class="fr-table">
         <thead>
+          {{!-- Character Icons Row (inside table for guaranteed column alignment) --}}
+          <tr class="fr-character-icons-row">
+            <th></th>
+            <th>
+              <button class="fr-add-character-btn" id="fr-add-character" title="Add Character" data-tooltip="Add a new character column">+</button>
+            </th>
+            {{#each recipients}}
+              <th class="fr-char-icon-cell" data-uid="{{id}}" data-iscustom="{{isCustom}}">
+                <div class="fr-char-icon-wrapper fr-img-bg-container{{#if imgBgEnabled}} bg-enabled {{imgBgClass}}{{/if}}" data-uid="{{id}}" data-iscustom="{{isCustom}}" data-tooltip="Click to edit {{name}}" data-viewport-size="48" style="width:48px; height:48px;">
+                  <span class="fr-img-frame">
+                    <img class="fr-img-transformable" src="{{#if img}}{{img}}{{else}}icons/svg/mystery-man.svg{{/if}}" alt="{{name}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" />
+                  </span>
+                </div>
+                <span class="fr-char-icon-name">{{name}}</span>
+                <span class="fr-char-icon-edit" data-uid="{{id}}" data-iscustom="{{isCustom}}">✏️</span>
+              </th>
+            {{/each}}
+          </tr>
           <tr>
-            <th class="col-drag-handle">⋮⋮</th>
-            <th class="col-faction">Faction</th>
+            <th class="col-drag-handle"></th>
+            <th class="col-faction">Item</th>
             {{#each recipients}}
               <th class="col-player{{#if isCustom}} fr-col-custom{{/if}}">
                 <div class="fr-recipient-header">
                   <span class="fr-recipient-name">{{name}}</span>
                   <span class="fr-recipient-controls">
                     {{#if isCustom}}
-                      <button class="fr-share-custom{{#if sharedToPlayers}} is-active{{/if}}" data-customid="{{id}}" title="{{#if sharedToPlayers}}Stop sharing with players{{else}}Share this entry with players{{/if}}">
+                      <button class="fr-share-custom{{#if sharedToPlayers}} is-active{{/if}}" data-customid="{{id}}" title="{{#if sharedToPlayers}}Stop sharing{{else}}Share{{/if}}" data-tooltip="{{#if sharedToPlayers}}Stop sharing with players{{else}}Share this entry with players{{/if}}">
                         {{#if sharedToPlayers}}Shared{{else}}Share{{/if}}
                       </button>
-                      <button class="fr-del-custom" data-customid="{{id}}" title="Delete Custom Entry">🗑️</button>
                     {{else}}
-                      <button class="fr-del-tab" data-pageid="{{../activePageId}}" data-uid="{{id}}" title="Delete Tab for Player">🗑️</button>
+                      <button class="fr-del-tab" data-pageid="{{../activePageId}}" data-uid="{{id}}" title="Remove" data-tooltip="Remove {{name}} from this page">🗑️</button>
                     {{/if}}
                   </span>
                 </div>
@@ -98,63 +88,50 @@
         </thead>
         <tbody>
           {{#each factions}}
-            <tr>
+            <tr data-fid="{{id}}">
               <td class="col-drag-handle">
-                <div class="fr-drag-handle" title="Drag to reorder">
+                <div class="fr-drag-handle" title="Drag to reorder" data-tooltip="Drag to reorder items">
                   ⋮⋮
                 </div>
               </td>
               <td class="col-faction">
                 <span class="fr-faction">
                   <span class="fr-img-bg-container{{#if imgBgEnabled}} bg-enabled{{/if}} {{imgBgClass}}" data-fid="{{id}}" data-viewport-size="48" style="width:48px; height:48px;">
-                      <span class="fr-img-frame">
-                        <img class="fr-img fr-img-transformable" src="{{img}}" data-fid="{{id}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" title="Change image" />
-                      </span>
-                    </span>
-                    <span class="fr-img-edit" data-fid="{{id}}" data-pageid="{{../activePageId}}" title="Adjust Framing" style="margin-left:8px; cursor:pointer; display:inline-flex; flex-direction:column; align-items:center; gap:0;">
-                    <span style="font-size:16px; line-height:1;">🖼️</span>
-                    <span style="font-size:10px; color:#b48e5a; margin-top:-2px;">img</span>
-                  </span>
-                  <span class="fr-name">{{name}}</span>
-                  <span class="fr-del" data-fid="{{id}}" title="Delete">🗑️</span>
-                  <span class="fr-checkbox-label" title="Enable background color behind image">
-                    <input type="checkbox" class="fr-img-bg-toggle fr-checkbox" data-fid="{{id}}" {{#if imgBgEnabled}}checked{{/if}} /> BG
-                  </span>
-                  <span class="fr-bg-dropdown" style="display:inline-block;">
-                    <span class="fr-bg-selector" data-fid="{{id}}" title="Select Background" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
-                      <span class="fr-bg-preview {{imgBgClass}}" data-fid="{{id}}"></span>
-                      <span style="font-size:11px;">Color</span>
-                    </span>
-                    <div class="fr-bg-dropdown-content" data-fid="{{id}}">
-                      {{!-- Options list; keep in sync with backgrounds.css classes --}}
-                      {{#each ../backgroundOptions}}
-                        <div class="fr-bg-option" data-fid="{{../id}}" data-bgclass="{{class}}">
-                          <span class="fr-bg-option-preview {{class}}"></span>
-                          <span class="fr-bg-option-name">{{label}}</span>
-                        </div>
-                      {{/each}}
-                      <div class="fr-bg-option fr-bg-option-clear" data-fid="{{id}}" data-bgclass="">Clear</div>
-                    </div>
-                  </span>
-                  <span class="fr-checkbox-stack">
-                    <span class="fr-checkbox-label" title="Keep visible at zero?">
-                      <input type="checkbox" class="fr-persist fr-checkbox" data-fid="{{id}}" {{#if persistOnZero}}checked{{/if}} />
-                      Persist @ 0
-                    </span>
-                    <span class="fr-checkbox-label" title="Allow player to control value">
-                      <input type="checkbox" class="fr-player-control fr-checkbox" data-fid="{{id}}" {{#if playerControlled}}checked{{/if}} />
-                      Player Controlled
+                    <span class="fr-img-frame">
+                      <img class="fr-img fr-img-transformable" src="{{img}}" data-fid="{{id}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" title="Change image" />
                     </span>
                   </span>
+                  <div class="fr-name-container">
+                    {{#if linkedUuid}}
+                      <span class="fr-name fr-name-link" data-uuid="{{linkedUuid}}" title="Click to open linked item">{{name}}</span>
+                    {{else}}
+                      <span class="fr-name">{{name}}</span>
+                    {{/if}}
+                    {{#if description}}
+                      <span class="fr-description" title="{{description}}">{{description}}</span>
+                    {{/if}}
+                  </div>
+                  <div class="fr-btn-column">
+                    <button class="fr-edit-bag-btn" data-fid="{{id}}" data-pageid="{{../activePageId}}" title="Edit" data-tooltip="Edit list item settings">✏️</button>
+                    {{#if linkedUuid}}
+                      <button class="fr-uuid-link-btn" data-uuid="{{linkedUuid}}" title="Open Linked Item" data-tooltip="Open linked document">🔗</button>
+                    {{/if}}
+                  </div>
                 </span>
               </td>
               {{#each cells}}
                 <td class="fr-cell">
-                  <input class="fr-val" type="number" min="-50" max="50" value="{{value}}" data-fid="{{../id}}" data-uid="{{userId}}" />
-                  <div class="fr-meter">
-                    <span class="neg" style="width: {{negWidth}}%;"></span>
-                    <span class="zero"></span>
-                    <span class="pos" style="width: {{posWidth}}%;"></span>
+                  <div class="fr-val-controls">
+                    <input class="fr-val" type="number" min="{{../minValue}}" max="{{../maxValue}}" value="{{value}}" data-fid="{{../id}}" data-uid="{{userId}}" />
+                    <div class="fr-val-buttons">
+                      <button class="fr-val-btn fr-val-minus" data-fid="{{../id}}" data-uid="{{userId}}" data-tooltip="Decrease by 1">−</button>
+                      <button class="fr-val-btn fr-val-plus" data-fid="{{../id}}" data-uid="{{userId}}" data-tooltip="Increase by 1">+</button>
+                    </div>
+                    <div class="fr-meter">
+                      <span class="neg" style="width: {{negWidth}}%;"></span>
+                      <span class="zero"></span>
+                      <span class="pos" style="width: {{posWidth}}%;"></span>
+                    </div>
                   </div>
                 </td>
               {{/each}}
@@ -164,7 +141,24 @@
       </table>
     </div>
   {{else}}
+    {{!-- Player View --}}
     {{#if (eq activeTabType 'page')}}
+      {{#if permanentDismissals.length}}
+        <div class="fr-permanent-dismissals" style="margin-bottom: 12px; padding: 8px; background: rgba(180, 142, 90, 0.1); border: 1px solid rgba(180, 142, 90, 0.3); border-radius: 4px;">
+          <div class="fr-dismissals-header" style="font-weight: 600; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+            <span>🔕 Disabled Notifications ({{permanentDismissals.length}})</span>
+            <span class="fr-toggle-icon" style="font-size: 10px;">{{#if dismissalsCollapsed}}▶{{else}}▼{{/if}}</span>
+          </div>
+          <div class="fr-dismissals-list{{#if dismissalsCollapsed}} fr-hidden{{/if}}" style="margin-top: 6px;">
+            {{#each permanentDismissals}}
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px;">
+                <span><strong>{{factionName}}:</strong> {{message}}</span>
+                <button type="button" class="fr-reenable-notification" data-announcement-id="{{id}}" data-pageid="{{pageId}}" style="padding: 2px 8px; font-size: 11px; background: #b48e5a; border: none; border-radius: 3px; color: #23232b; cursor: pointer;">Re-enable</button>
+              </div>
+            {{/each}}
+          </div>
+        </div>
+      {{/if}}
       {{#if announcementAlerts.length}}
         <div class="fr-announcement-alerts fr-player-announcements">
           {{#each announcementAlerts}}
@@ -173,7 +167,13 @@
               {{#if value}}
                 <span class="fr-announcement-alert-meta">Current value: {{value}}</span>
               {{/if}}
-              <button type="button" class="fr-announcement-dismiss" data-announcement-id="{{id}}" data-pageid="{{pageId}}">Dismiss</button>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;">
+                  <input type="checkbox" class="fr-announcement-no-show" data-announcement-id="{{id}}" style="cursor: pointer;" />
+                  <span>Do Not Show This Again</span>
+                </label>
+                <button type="button" class="fr-announcement-dismiss" data-announcement-id="{{id}}" data-pageid="{{pageId}}" data-tooltip="Dismiss this alert">Dismiss</button>
+              </div>
             </div>
           {{/each}}
         </div>
@@ -185,36 +185,57 @@
               <div class="fr-card-controls" style="display: flex; align-items: center; gap: 12px;">
                 {{#if playerControlled}}
                   <div class="fr-arrow-group" style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                    <button class="fr-arrow fr-arrow-up" data-fid="{{id}}" data-pageid="{{pageId}}" title="Increase" style="margin-bottom: 2px;">&#8593;</button>
-                    <button class="fr-arrow fr-arrow-down" data-fid="{{id}}" data-pageid="{{pageId}}" title="Decrease" style="margin-top: 2px;">&#8595;</button>
+                    <button class="fr-arrow fr-arrow-up" data-fid="{{id}}" data-pageid="{{pageId}}" title="Increase" data-tooltip="Increase value by 1" style="margin-bottom: 2px;">&#8593;</button>
+                    <button class="fr-arrow fr-arrow-down" data-fid="{{id}}" data-pageid="{{pageId}}" title="Decrease" data-tooltip="Decrease value by 1" style="margin-top: 2px;">&#8595;</button>
                   </div>
                 {{/if}}
                 <span class="fr-img-bg-container{{#if imgBgEnabled}} bg-enabled{{/if}} {{imgBgClass}}" data-fid="{{id}}" data-viewport-size="80" style="display:inline-flex; width:80px; height:80px; position:relative;">
                   <span class="fr-img-frame">
                     <img class="fr-card-img fr-img-transformable" src="{{img}}" data-fid="{{id}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" />
                   </span>
-                  <button type="button" class="fr-img-edit fr-card-img-edit" data-fid="{{id}}" data-pageid="{{pageId}}" title="Adjust Framing">🖼️</button>
+                  <button type="button" class="fr-img-edit fr-card-img-edit" data-fid="{{id}}" data-pageid="{{pageId}}" title="Adjust Framing" data-tooltip="Adjust image position and zoom">🖼️</button>
                 </span>
                 <span class="fr-bg-dropdown" style="margin-left:4px;">
-                  <span class="fr-bg-selector" data-fid="{{id}}" title="Select Background" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
+                  <span class="fr-bg-selector" data-fid="{{id}}" data-pageid="{{pageId}}" title="Select Background" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}" data-tooltip="Select background color">
                     <span class="fr-bg-preview {{imgBgClass}}" data-fid="{{id}}"></span>
                   </span>
-                  <div class="fr-bg-dropdown-content" data-fid="{{id}}">
+                  <div class="fr-bg-dropdown-content" data-fid="{{id}}" data-pageid="{{pageId}}">
                     {{#each ../backgroundOptions}}
-                      <div class="fr-bg-option" data-fid="{{../id}}" data-bgclass="{{class}}">
+                      <div class="fr-bg-option" data-fid="{{../id}}" data-pageid="{{../pageId}}" data-bgclass="{{class}}">
                         <span class="fr-bg-option-preview {{class}}"></span>
                         <span class="fr-bg-option-name">{{label}}</span>
                       </div>
                     {{/each}}
-                    <div class="fr-bg-option fr-bg-option-clear" data-fid="{{id}}" data-bgclass="">Clear</div>
+                    <div class="fr-bg-option fr-bg-option-clear" data-fid="{{id}}" data-pageid="{{pageId}}" data-bgclass="">Clear</div>
                   </div>
                 </span>
-                <span style="display:flex; align-items:center; gap:4px; font-size:11px;">
-                  <input type="checkbox" class="fr-img-bg-toggle fr-checkbox" data-fid="{{id}}" {{#if imgBgEnabled}}checked{{/if}} title="Enable background" /> BG
+                <span style="display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px;">
+                  <span style="display:flex; align-items:center; gap:4px;" data-tooltip="Enable background color">
+                    <input type="checkbox" class="fr-img-bg-toggle fr-checkbox" data-fid="{{id}}" data-pageid="{{pageId}}" {{#if imgBgEnabled}}checked{{/if}} /> BG
+                  </span>
+                  {{#if linkedUuid}}
+                    <button class="fr-uuid-link-btn fr-card-uuid-link" data-uuid="{{linkedUuid}}" title="Open Linked Item" data-tooltip="Open linked document">🔗</button>
+                  {{/if}}
                 </span>
               </div>
-              <div class="fr-card-name">{{name}}</div>
-              <div class="fr-card-value">Value: {{value}}</div>
+              <div class="fr-card-name-container">
+                {{#if linkedUuid}}
+                  <div class="fr-card-name fr-name-link" data-uuid="{{linkedUuid}}" title="Click to open linked item">{{name}}</div>
+                {{else}}
+                  <div class="fr-card-name">{{name}}</div>
+                {{/if}}
+                {{#if description}}
+                  <div class="fr-card-description" title="{{description}}">{{description}}</div>
+                {{/if}}
+              </div>
+              {{#if playerControlled}}
+                <div class="fr-card-value-input-container">
+                  <label>Value:</label>
+                  <input type="number" class="fr-player-value-input" value="{{value}}" min="{{minValue}}" max="{{maxValue}}" data-fid="{{id}}" data-pageid="{{pageId}}" title="Enter value directly" />
+                </div>
+              {{else}}
+                <div class="fr-card-value">Value: {{value}}</div>
+              {{/if}}
               <div class="fr-card-meter">
                 {{#if (gt posWidth 0)}}
                   <span class="fr-card-meter-bar positive" style="width: {{posWidth}}%; left: 50%;"></span>

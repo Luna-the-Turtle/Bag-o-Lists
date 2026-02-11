@@ -1,0 +1,64 @@
+{{!-- Edit/Add Character Dialog --}}
+<div class="bol-dialog edit-character-dialog" data-high-contrast="{{highContrast}}">
+  <div class="bol-dialog-content">
+    <div class="bol-dialog-row">
+      <label for="bol-char-name">Name:</label>
+      <input type="text" id="bol-char-name" class="bol-dialog-input" value="{{name}}" placeholder="Enter character name" />
+    </div>
+    
+    <div class="bol-dialog-row bol-icon-row">
+      <label>Icon:</label>
+      <div class="bol-icon-preview-container">
+        <span class="bol-icon-preview fr-img-bg-container{{#if imgBgEnabled}} bg-enabled {{imgBgClass}}{{/if}}" data-viewport-size="64" style="width:64px; height:64px;">
+          <span class="fr-img-frame">
+            <img class="bol-char-icon-img fr-img-transformable" src="{{img}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" />
+          </span>
+        </span>
+        <button type="button" class="bol-change-icon-btn" title="Change Icon">📁</button>
+        <button type="button" class="bol-adjust-frame-btn" title="Adjust Framing">🖼️</button>
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-checkbox-row">
+      <label for="bol-show-icon">Show Icon:</label>
+      <input type="checkbox" id="bol-show-icon" class="bol-dialog-checkbox" {{#if showIcon}}checked{{/if}} />
+    </div>
+    
+    <div class="bol-dialog-row bol-checkbox-row">
+      <label for="bol-char-bg-toggle">Background:</label>
+      <input type="checkbox" id="bol-char-bg-toggle" class="bol-dialog-checkbox" {{#if imgBgEnabled}}checked{{/if}} />
+    </div>
+    
+    <div class="bol-dialog-row bol-bg-selector-row">
+      <label>Color:</label>
+      <div class="bol-bg-selector-container" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
+        <div class="bol-bg-preview-box">
+          <span class="bol-bg-preview{{#if imgBgEnabled}} {{imgBgClass}}{{/if}}"></span>
+        </div>
+        <select id="bol-char-bg-select" class="bol-dialog-input" style="flex:1;">
+          <option value="" {{#unless imgBgClass}}selected{{/unless}}>None</option>
+          <option value="fr-bg-gradient-blue" {{#if (eq imgBgClass 'fr-bg-gradient-blue')}}selected{{/if}}>Blue Gradient</option>
+          <option value="fr-bg-gradient-sunset" {{#if (eq imgBgClass 'fr-bg-gradient-sunset')}}selected{{/if}}>Sunset Gradient</option>
+          <option value="fr-bg-gradient-purple" {{#if (eq imgBgClass 'fr-bg-gradient-purple')}}selected{{/if}}>Purple Gradient</option>
+          <option value="fr-bg-gradient-green" {{#if (eq imgBgClass 'fr-bg-gradient-green')}}selected{{/if}}>Green Gradient</option>
+          <option value="fr-bg-gradient-gold" {{#if (eq imgBgClass 'fr-bg-gradient-gold')}}selected{{/if}}>Gold Gradient</option>
+          <option value="fr-bg-gradient-red" {{#if (eq imgBgClass 'fr-bg-gradient-red')}}selected{{/if}}>Red Gradient</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-save-row">
+      <label></label>
+      <button type="button" class="bol-save-btn" title="Save changes">💾 Save</button>
+    </div>
+    
+    {{#if isCustom}}
+      <hr class="bol-dialog-divider" />
+      
+      <div class="bol-dialog-row bol-delete-row">
+        <label>Delete Character:</label>
+        <button type="button" class="bol-delete-btn" title="Delete this custom entry">🗑️</button>
+      </div>
+    {{/if}}
+  </div>
+</div>

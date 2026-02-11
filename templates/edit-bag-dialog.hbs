@@ -1,0 +1,90 @@
+{{!-- Edit/Add Bag Dialog --}}
+<div class="bol-dialog edit-bag-dialog" data-high-contrast="{{highContrast}}">
+  <div class="bol-dialog-content">
+    <div class="bol-dialog-row">
+      <label for="bol-bag-name">Name:</label>
+      <input type="text" id="bol-bag-name" class="bol-dialog-input" value="{{name}}" placeholder="Enter bag name" />
+    </div>
+    
+    <div class="bol-dialog-row">
+      <label for="bol-bag-description">Description:</label>
+      <textarea id="bol-bag-description" class="bol-dialog-input bol-dialog-textarea" placeholder="Optional description for this item" rows="3">{{description}}</textarea>
+    </div>
+    
+    <div class="bol-dialog-row">
+      <label for="bol-bag-uuid">Linked Item:</label>
+      <div style="display: flex; gap: 8px; align-items: center; flex: 1;">
+        <input type="text" id="bol-bag-uuid" class="bol-dialog-input" value="{{linkedUuid}}" placeholder="Drag item here or paste UUID" style="flex: 1;" />
+        <button type="button" class="bol-uuid-clear-btn" title="Clear linked item">✖</button>
+        <button type="button" class="bol-uuid-open-btn" title="Open linked item" {{#unless linkedUuid}}disabled{{/unless}}>📄</button>
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-icon-row">
+      <label>Icon:</label>
+      <div class="bol-icon-preview-container">
+        <span class="bol-icon-preview fr-img-bg-container{{#if imgBgEnabled}} bg-enabled {{imgBgClass}}{{/if}}" data-viewport-size="64" style="width:64px; height:64px;">
+          <span class="fr-img-frame">
+            <img class="bol-icon-img fr-img-transformable" src="{{img}}" data-scale="{{imgScale}}" data-offset-x="{{imgOffsetX}}" data-offset-y="{{imgOffsetY}}" data-editor-size="{{imgEditorSize}}" />
+          </span>
+        </span>
+        <button type="button" class="bol-change-icon-btn" title="Change Icon">📁</button>
+        <button type="button" class="bol-adjust-frame-btn" title="Adjust Framing">🖼️</button>
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-checkbox-row">
+      <label for="bol-bag-bg-toggle">Background:</label>
+      <input type="checkbox" id="bol-bag-bg-toggle" class="bol-dialog-checkbox" {{#if imgBgEnabled}}checked{{/if}} />
+    </div>
+    
+    <div class="bol-dialog-row bol-bg-selector-row">
+      <label>Color:</label>
+      <div class="bol-bg-selector-container" style="{{#unless imgBgEnabled}}opacity:0.4; pointer-events:none;{{/unless}}">
+        <div class="bol-bg-preview-box">
+          <span class="bol-bg-preview{{#if imgBgEnabled}} {{imgBgClass}}{{/if}}"></span>
+        </div>
+        <select id="bol-bag-bg-select" class="bol-dialog-input" style="flex:1;">
+          <option value="" {{#unless imgBgClass}}selected{{/unless}}>None</option>
+          <option value="fr-bg-gradient-blue" {{#if (eq imgBgClass 'fr-bg-gradient-blue')}}selected{{/if}}>Blue Gradient</option>
+          <option value="fr-bg-gradient-sunset" {{#if (eq imgBgClass 'fr-bg-gradient-sunset')}}selected{{/if}}>Sunset Gradient</option>
+          <option value="fr-bg-gradient-purple" {{#if (eq imgBgClass 'fr-bg-gradient-purple')}}selected{{/if}}>Purple Gradient</option>
+          <option value="fr-bg-gradient-green" {{#if (eq imgBgClass 'fr-bg-gradient-green')}}selected{{/if}}>Green Gradient</option>
+          <option value="fr-bg-gradient-gold" {{#if (eq imgBgClass 'fr-bg-gradient-gold')}}selected{{/if}}>Gold Gradient</option>
+          <option value="fr-bg-gradient-red" {{#if (eq imgBgClass 'fr-bg-gradient-red')}}selected{{/if}}>Red Gradient</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-checkbox-row">
+      <label for="bol-persist-zero">Preserve @ 0:</label>
+      <input type="checkbox" id="bol-persist-zero" class="bol-dialog-checkbox" {{#if persistOnZero}}checked{{/if}} />
+    </div>
+    
+    <div class="bol-dialog-row bol-checkbox-row">
+      <label for="bol-player-controlled">Player Controlled:</label>
+      <input type="checkbox" id="bol-player-controlled" class="bol-dialog-checkbox" {{#if playerControlled}}checked{{/if}} />
+    </div>
+    
+    <div class="bol-dialog-row">
+      <label>Value Range:</label>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <input type="number" id="bol-min-value" class="bol-dialog-input" value="{{minValue}}" placeholder="Min" style="width: 80px;" />
+        <span>to</span>
+        <input type="number" id="bol-max-value" class="bol-dialog-input" value="{{maxValue}}" placeholder="Max" style="width: 80px;" />
+      </div>
+    </div>
+    
+    <div class="bol-dialog-row bol-save-row">
+      <label>Save:</label>
+      <button type="button" class="bol-save-btn" title="Save changes">💾 Save</button>
+    </div>
+    
+    <hr class="bol-dialog-divider" />
+    
+    <div class="bol-dialog-row bol-delete-row">
+      <label>Delete List Item:</label>
+      <button type="button" class="bol-delete-btn" title="Delete this bag">🗑️</button>
+    </div>
+  </div>
+</div>

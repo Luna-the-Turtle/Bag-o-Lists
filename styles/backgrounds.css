@@ -42,8 +42,20 @@
   background: linear-gradient(135deg, #834d9b 0%, #d04ed6 100%);
 }
 
+.fr-bg-gradient-green {
+  background: linear-gradient(135deg, #1b5e20 0%, #4caf50 50%, #81c784 100%);
+}
+
+.fr-bg-gradient-gold {
+  background: linear-gradient(135deg, #b48e5a 0%, #d4af37 50%, #f4d03f 100%);
+}
+
+.fr-bg-gradient-red {
+  background: linear-gradient(135deg, #8a2387 0%, #e94057 50%, #f27121 100%);
+}
+
 .fr-bg-gradient-forest {
-  background: linear-gradient(135deg, #304352 0%, #3a6073 50%, #3a7bd5 100%);
+  background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 50%, #4caf50 100%);
 }
 
 .fr-bg-gradient-fire {

@@ -1,3 +1,241 @@
+/* ===== Accessibility & QoL Features ===== */
+/* These features are scoped to the module windows only */
+
+/* Compact Mode - applied via data attribute on faction-tracker */
+.faction-tracker[data-compact="true"] {
+  font-size: 12px;
+}
+
+.faction-tracker[data-compact="true"] .fr-tab,
+.faction-tracker[data-compact="true"] .fr-add-bag-btn,
+.faction-tracker[data-compact="true"] .fr-delete-bag-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.faction-tracker[data-compact="true"] .fr-toolbar-main {
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.faction-tracker[data-compact="true"] .fr-char-icon-wrapper {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+/* Only apply compact sizing to character icons, not player cards */
+.faction-tracker[data-compact="true"] .fr-character-icons-row .fr-img-bg-container {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.faction-tracker[data-compact="true"] .fr-card {
+  padding: 8px;
+  gap: 6px;
+}
+
+.faction-tracker[data-compact="true"] .fr-val {
+  font-size: 14px;
+  padding: 2px 4px;
+}
+
+.faction-tracker[data-compact="true"] .fr-character-icons-row th {
+  padding: 4px 2px 2px 2px;
+}
+
+.faction-tracker[data-compact="true"] .fr-char-icon-cell {
+  padding: 4px 2px;
+}
+
+/* Large Fonts - applied via data attribute */
+.faction-tracker[data-large-fonts="true"] {
+  font-size: 16px;
+}
+
+.faction-tracker[data-large-fonts="true"] .fr-tab,
+.faction-tracker[data-large-fonts="true"] .fr-add-bag-btn,
+.faction-tracker[data-large-fonts="true"] .fr-delete-bag-btn {
+  font-size: 16px;
+  padding: 8px 14px;
+}
+
+.faction-tracker[data-large-fonts="true"] .fr-val {
+  font-size: 18px;
+  padding: 6px 8px;
+  min-width: 60px;
+}
+
+.faction-tracker[data-large-fonts="true"] .fr-toolbar-main button {
+  font-size: 15px;
+  padding: 8px 12px;
+}
+
+.faction-tracker[data-large-fonts="true"] .fr-card-name {
+  font-size: 16px;
+}
+
+.faction-tracker[data-large-fonts="true"] .fr-char-name {
+  font-size: 13px;
+}
+
+/* High Contrast Mode - applied via data attribute */
+.faction-tracker[data-high-contrast="true"] {
+  --hc-bg: #000000;
+  --hc-fg: #ffffff;
+  --hc-border: #ffff00;
+  --hc-accent: #00ffff;
+  --hc-negative: #ff6666;
+  --hc-positive: #66ff66;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-table {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-table th,
+.faction-tracker[data-high-contrast="true"] .fr-table td {
+  border-color: var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-tab {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-tab.active {
+  background: var(--hc-accent) !important;
+  color: var(--hc-bg) !important;
+  border-color: var(--hc-accent) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-val {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] button {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] button:hover {
+  background: var(--hc-accent) !important;
+  color: var(--hc-bg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] input {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-card {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-dec {
+  border-color: var(--hc-negative) !important;
+  color: var(--hc-negative) !important;
+}
+
+.faction-tracker[data-high-contrast="true"] .fr-inc {
+  border-color: var(--hc-positive) !important;
+  color: var(--hc-positive) !important;
+}
+
+/* High Contrast for Module Dialogs */
+.bol-dialog[data-high-contrast="true"] {
+  --hc-bg: #000000;
+  --hc-fg: #ffffff;
+  --hc-border: #ffff00;
+  --hc-accent: #00ffff;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] .bol-dialog-content {
+  background: var(--hc-bg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] input,
+.bol-dialog[data-high-contrast="true"] select,
+.bol-dialog[data-high-contrast="true"] textarea {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] input::placeholder {
+  color: #888 !important;
+}
+
+.bol-dialog[data-high-contrast="true"] button {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+  color: var(--hc-fg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] button:hover {
+  background: var(--hc-accent) !important;
+  color: var(--hc-bg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] h3,
+.bol-dialog[data-high-contrast="true"] label,
+.bol-dialog[data-high-contrast="true"] span {
+  color: var(--hc-fg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] .bol-archive-entry,
+.bol-dialog[data-high-contrast="true"] .bol-dialog-row,
+.bol-dialog[data-high-contrast="true"] .fr-announcement-form-row,
+.bol-dialog[data-high-contrast="true"] .fr-announcement-item {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] .bol-archive-entry-name,
+.bol-dialog[data-high-contrast="true"] .bol-archive-entry-date {
+  color: var(--hc-fg) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] .bol-dialog-divider {
+  border-color: var(--hc-border) !important;
+}
+
+.bol-dialog[data-high-contrast="true"] .bol-icon-preview {
+  border: 2px solid var(--hc-border) !important;
+}
+
+/* High Contrast for announcement alerts */
+.bol-dialog[data-high-contrast="true"] .fr-announcement-alert {
+  border: 2px solid var(--hc-border) !important;
+  background: var(--hc-bg) !important;
+}
+
+/* Hide player names when setting is disabled */
+.faction-tracker[data-show-player-names="false"] .fr-char-icon-name,
+.faction-tracker[data-show-player-names="false"] .fr-recipient-name {
+  display: none !important;
+}
+
+/* Hide Foundry tooltips when setting is disabled */
+/* This works by preventing the tooltip from appearing via CSS */
+.faction-tracker[data-show-tooltips="false"] [data-tooltip] {
+  --tooltip-display: none;
+}
+
+/* ===== End Accessibility Features ===== */
+
 /* Faction table UI improvements */
 .fr-table .fr-checkbox {
   appearance: none;
@@ -112,6 +350,7 @@
   display: inline-flex;
   align-items: stretch;
   position: relative;
+  flex-shrink: 0; /* Don't shrink tab groups */
 }
 
 .fr-tab-group .fr-tab {
@@ -142,14 +381,19 @@
 
 .fr-tab-group .fr-rename-input {
   display: none;
-  margin-left: 8px;
-  min-width: 140px;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 160px;
   background: #23232b;
   color: #f5f5f5;
-  border: 1.5px solid #b48e5a;
+  border: 2px solid #b48e5a;
   border-radius: 6px;
   padding: 6px 10px;
   box-sizing: border-box;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 .fr-tab {
   padding: 6px 16px;
@@ -171,7 +415,7 @@
 /* Content area constraints (not window constraints) */
 .faction-tracker {
   height: 100%; /* Fill available window content area */
-  overflow: hidden;
+  overflow: visible; /* Allow dropdowns to extend outside */
   display: flex;
   flex-direction: column;
 }
@@ -232,7 +476,20 @@
   overflow-y: auto;
 }
 
+.fr-announcement-toolbar select#fr-announcement-chat-recipients {
+  min-width: 160px;
+  max-width: 220px;
+  min-height: 64px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
 .fr-announcement-toolbar select#fr-announcement-recipients option:checked {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.fr-announcement-toolbar select#fr-announcement-chat-recipients option:checked {
   background: #b48e5a;
   color: #23232b;
 }
@@ -300,10 +557,14 @@
   border: 1px solid #c06060;
   background: #23232b;
   color: #f5f5f5;
-  padding: 6px 12px;
+  padding: 4px 8px;
   font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fr-announcement-controls button:disabled,
@@ -373,6 +634,11 @@
   margin-bottom: 12px;
 }
 
+/* Hidden utility class for collapsible sections */
+.fr-hidden {
+  display: none !important;
+}
+
 /* Scrollable table container for GM view */
 .fr-table-container {
   flex: 1; /* Take up all remaining space */
@@ -417,14 +683,18 @@
   white-space: nowrap;
 }
 
-.col-faction { width: 280px; text-align: left; }
-.col-player { text-align: center; }
+.col-faction { width: 180px; text-align: left; }
+.col-player { text-align: center; width: 100px; min-width: 100px; }
 .col-drag-handle { 
   width: 40px; 
   text-align: center; 
   border-right: 2px solid #b48e5a;
   background: rgba(180, 142, 90, 0.1);
   padding: 0;
+}
+/* Header drag-handle cell: empty label, must not block the first row's real handle */
+thead th.col-drag-handle {
+  pointer-events: none;
 }
 
 /* Drag handle styling */
@@ -455,14 +725,19 @@
 
 .fr-recipient-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: center;
+  gap: 2px;
 }
 
 .fr-recipient-name {
   font-weight: 600;
-  text-align: left;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .fr-recipient-controls {
@@ -532,6 +807,26 @@
   overflow:hidden;
 }
 .fr-img-frame { position: relative; width: 100%; height: 100%; display: block; overflow: hidden; border-radius: inherit; }
+/* Fix: Ensure .fr-img-frame fills the full container in player card view */
+.fr-card .fr-img-bg-container .fr-img-frame,
+.fr-grid .fr-img-bg-container .fr-img-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+}
+
+
+
+/* CRITICAL: Ensure image background container maintains positioning context
+   DO NOT OVERRIDE - Required for absolute positioning of child elements (edit button) */
+.fr-img-bg-container {
+  position: relative !important; /* Must stay relative for .fr-card-img-edit absolute positioning */
+  flex-shrink: 0 !important; /* Prevent flex parent from shrinking this container */
+}
 .fr-img-transformable { position: absolute; top: 50%; left: 50%; transform-origin: center center; width: auto; height: auto; max-width: none; max-height: none; pointer-events: auto; border-radius: inherit; }
 .fr-img { cursor: pointer; }
 .fr-name { font-weight: 600; }
@@ -641,6 +936,24 @@
   font-weight: 500;
 }
 
+.fr-player-value-input {
+  width: 50px;
+  text-align: center;
+  padding: 2px 4px;
+  background: transparent;
+  border: 1px solid #b48e5a;
+  color: #e0e0e0;
+  border-radius: 3px;
+}
+
+.fr-card-value-input-container {
+  margin-top: 6px;
+  text-align: center;
+  color: #e0e0e0;
+  font-size: 1em;
+  font-weight: 500;
+}
+
 .fr-card-meter {
   width: 90%;
   height: 14px;
@@ -705,10 +1018,13 @@
   z-index: 3;
 }
 
+/* CRITICAL: Image framing edit button positioning
+   DO NOT OVERRIDE - Must stay at bottom-right of image container
+   Uses absolute positioning within .fr-img-bg-container (which has position:relative) */
 .fr-card-img-edit {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
+  position: absolute !important; /* Ensure this stays absolute regardless of parent flex */
+  right: 4px !important;
+  bottom: 4px !important;
   background: rgba(35,35,43,0.85);
   color: #f0e6d2;
   border: 1px solid #b48e5a;
@@ -718,6 +1034,7 @@
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.2s ease;
+  z-index: 100; /* Ensure button stays on top */
 }
 
 .fr-img-bg-container:hover .fr-card-img-edit,
@@ -1099,4 +1416,765 @@
   text-align: center;
   color: #c9c9d1;
   font-size: 14px;
+}
+/* ========================================
+   NEW UI COMPONENTS - v2.0 Update
+   ======================================== */
+
+/* --- Dialog Styles (shared across all modal dialogs) --- */
+.bol-dialog {
+  padding: 16px;
+  color: #f0e6d2;
+  font-size: 14px;
+}
+
+.bol-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bol-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bol-dialog-row label {
+  min-width: 120px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.bol-dialog-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #1a1a21;
+  color: #f5f5f5;
+  font-size: 14px;
+}
+
+.bol-dialog-input:focus {
+  outline: none;
+  border-color: #c49a66;
+  box-shadow: 0 0 0 2px rgba(180, 142, 90, 0.25);
+}
+
+.bol-dialog-checkbox {
+  width: 20px;
+  height: 20px;
+  accent-color: #b48e5a;
+  cursor: pointer;
+}
+
+.bol-dialog-divider {
+  border: none;
+  border-top: 1px solid rgba(180, 142, 90, 0.4);
+  margin: 8px 0;
+}
+
+/* Archive Dialog Styling */
+.bol-archive-section {
+  margin-bottom: 16px;
+}
+
+.bol-archive-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.bol-archive-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.bol-archive-action-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  background: transparent;
+  color: #b48e5a;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bol-archive-action-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.bol-archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.bol-archive-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  background: rgba(180, 142, 90, 0.1);
+  border: 1px solid rgba(180, 142, 90, 0.3);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.bol-archive-entry:hover {
+  background: rgba(180, 142, 90, 0.2);
+}
+
+.bol-archive-entry-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  flex-shrink: 0;
+}
+
+.bol-archive-entry-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bol-archive-entry-name {
+  font-weight: 600;
+  color: #f0e6d2;
+  font-size: 14px;
+}
+
+.bol-archive-entry-date {
+  font-size: 11px;
+  color: rgba(240, 230, 210, 0.6);
+}
+
+.bol-archive-entry-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.bol-restore-entry-btn,
+.bol-delete-archived-btn,
+.bol-archive-entry-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  background: transparent;
+  color: #b48e5a;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bol-restore-entry-btn:hover {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #23232b;
+}
+
+.bol-delete-archived-btn:hover {
+  background: #e53935;
+  border-color: #e53935;
+  color: #fff;
+}
+
+.bol-archive-entry-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.bol-archive-empty {
+  text-align: center;
+  padding: 24px;
+  color: rgba(240, 230, 210, 0.5);
+  font-style: italic;
+}
+
+/* Icon row in dialogs */
+.bol-icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.bol-icon-preview-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bol-icon-preview {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bol-change-icon-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #23232b;
+  color: #f0e6d2;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bol-change-icon-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.bol-adjust-frame-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #23232b;
+  color: #f0e6d2;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bol-adjust-frame-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.bol-save-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #1a3d1a;
+  color: #f0e6d2;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.bol-save-btn:hover {
+  background: #2a5d2a;
+  transform: scale(1.05);
+}
+
+.bol-save-btn:active {
+  transform: scale(0.98);
+}
+
+/* Delete row styling */
+.bol-delete-row {
+  padding-top: 8px;
+}
+
+.bol-delete-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #c06060;
+  background: #23232b;
+  color: #f0e6d2;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bol-delete-btn:hover {
+  background: #c34c4c;
+  color: #fff;
+  border-color: #c34c4c;
+}
+
+/* Checkbox row alignment */
+.bol-checkbox-row {
+  justify-content: flex-start;
+}
+
+.bol-checkbox-row label {
+  min-width: 140px;
+}
+
+/* --- Character Icon Row (inside table thead for guaranteed column alignment) --- */
+/* The icon row is a <tr> in <thead>, sharing column widths with data rows */
+.fr-character-icons-row th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #1a1a23;
+  border-bottom: 1px solid rgba(180, 142, 90, 0.3);
+  padding: 8px 4px 4px 4px;
+  font-weight: normal;
+  letter-spacing: normal;
+  white-space: normal;
+  vertical-align: bottom;
+  text-align: center;
+}
+
+/* Header row (second thead row) sits below the icon row via JS-set top offset */
+.fr-table thead tr:not(.fr-character-icons-row) th {
+  z-index: 2;
+}
+
+.fr-char-icon-cell {
+  text-align: center;
+  vertical-align: bottom;
+  padding: 8px 2px 4px 2px;
+}
+
+.fr-char-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid #b48e5a;
+  overflow: hidden;
+  background: #23232b;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fr-char-icon-wrapper .fr-img-frame {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fr-char-icon-wrapper:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(180, 142, 90, 0.4);
+}
+
+.fr-char-icon-wrapper .fr-img-transformable {
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+
+.fr-char-icon-name {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #e0e0e0;
+  text-align: center;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-char-icon-edit {
+  font-size: 10px;
+  color: #b48e5a;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.fr-char-icon-cell:hover .fr-char-icon-edit {
+  opacity: 1;
+}
+
+/* Add Character button in header */
+.fr-add-character-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  background: transparent;
+  color: #b48e5a;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.fr-add-character-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+/* --- +/- Buttons for Value Cells --- */
+.fr-val-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-val-buttons {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.fr-val-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  background: #23232b;
+  color: #f0e6d2;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, color 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.fr-val-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.fr-val-btn.fr-val-minus {
+  border-color: #c06060;
+}
+
+.fr-val-btn.fr-val-minus:hover {
+  background: #c34c4c;
+  color: #fff;
+  border-color: #c34c4c;
+}
+
+.fr-val-btn.fr-val-plus {
+  border-color: #60c060;
+}
+
+.fr-val-btn.fr-val-plus:hover {
+  background: #4caf50;
+  color: #fff;
+  border-color: #4caf50;
+}
+
+/* --- Main Interface Restructuring --- */
+
+/* Fixed position Add Bag button */
+.fr-tabs-container {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  position: relative;
+  overflow: visible; /* Allow rename input dropdown to show */
+  min-height: 44px;
+}
+
+.fr-delete-bag-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e53935;
+  background: #3d1a1a;
+  color: #ff6b6b;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.fr-delete-bag-btn:hover {
+  background: #5d2a2a;
+  border-color: #ff6b6b;
+  color: #fff;
+}
+
+.fr-tabs-scroll {
+  display: flex;
+  flex-wrap: nowrap; /* Force horizontal only - no wrapping */
+  gap: 8px;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: thin;
+  scrollbar-color: #b48e5a #23232b;
+  padding-bottom: 4px; /* Space for scrollbar */
+  min-height: 40px; /* Ensure minimum height for tabs */
+  align-items: center;
+}
+
+.fr-tabs-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.fr-tabs-scroll::-webkit-scrollbar-track {
+  background: #23232b;
+  border-radius: 3px;
+}
+
+.fr-tabs-scroll::-webkit-scrollbar-thumb {
+  background: #b48e5a;
+  border-radius: 3px;
+}
+
+.fr-add-bag-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #1a3d1a;
+  color: #f0e6d2;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.fr-add-bag-btn:hover {
+  background: #2a5d2a;
+}
+
+/* Toolbar restructuring */
+.fr-toolbar-main {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.fr-toolbar-main input {
+  flex: 1;
+}
+
+/* Edit button in table */
+.col-edit {
+  width: 50px;
+  text-align: center;
+}
+
+.fr-edit-bag-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  background: transparent;
+  color: #b48e5a;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.fr-edit-bag-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+/* Button column for GM view - stacks edit and UUID buttons vertically
+   NOTE: This should NOT affect .fr-img-bg-container or .fr-card-img-edit positioning */
+.fr-btn-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+/* UUID Link button */
+.fr-uuid-link-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #4caf50;
+  background: transparent;
+  color: #4caf50;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+
+.fr-uuid-link-btn:hover {
+  background: #4caf50;
+  color: #23232b;
+}
+
+/* UUID Link button in player card view */
+.fr-card-uuid-link {
+  margin-top: 4px;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+/* --- Announcements Modal Styles --- */
+.announcements-dialog .fr-announcement-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.announcements-dialog .fr-announcement-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.announcements-dialog .fr-announcement-form-row label {
+  min-width: 80px;
+  font-weight: 600;
+}
+
+.announcements-dialog .fr-announcement-form-row select,
+.announcements-dialog .fr-announcement-form-row input {
+  flex: 1;
+}
+
+.announcements-dialog .fr-announcement-alerts {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.announcements-dialog .fr-announcement-alerts::-webkit-scrollbar {
+  width: 8px;
+}
+
+.announcements-dialog .fr-announcement-alerts::-webkit-scrollbar-track {
+  background: #1a1a21;
+  border-radius: 4px;
+}
+
+.announcements-dialog .fr-announcement-alerts::-webkit-scrollbar-thumb {
+  background: #b48e5a;
+  border-radius: 4px;
+}
+
+.announcements-dialog .fr-announcement-alerts::-webkit-scrollbar-thumb:hover {
+  background: #c49a66;
+}
+
+.announcements-dialog .fr-announcement-threshold-row input {
+  flex: 0 0 80px;
+}
+
+.announcements-dialog .fr-announcement-add-btn {
+  margin-top: 8px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #b48e5a;
+  color: #23232b;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.announcements-dialog .fr-announcement-add-btn:hover {
+  background: #c49a66;
+}
+
+.announcements-dialog .fr-announcement-add-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.announcements-dialog .fr-announcement-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.announcements-dialog .fr-announcement-controls label {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* Announcements modal button */
+.fr-announcements-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #b48e5a;
+  background: #23232b;
+  color: #f0e6d2;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fr-announcements-btn:hover {
+  background: #b48e5a;
+  color: #23232b;
+}
+
+.fr-announcements-btn .fr-alert-badge {
+  background: #c34c4c;
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Tooltips (scoped to module only) --- */
+.faction-tracker [data-tooltip],
+.edit-bag-dialog [data-tooltip],
+.edit-character-dialog [data-tooltip],
+.archive-dialog [data-tooltip],
+.announcements-dialog [data-tooltip] {
+  position: relative;
+}
+
+.faction-tracker [data-tooltip]:hover::after,
+.edit-bag-dialog [data-tooltip]:hover::after,
+.edit-character-dialog [data-tooltip]:hover::after,
+.archive-dialog [data-tooltip]:hover::after,
+.announcements-dialog [data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: #1a1a21;
+  color: #f0e6d2;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: nowrap;
+  border-radius: 4px;
+  border: 1px solid #b48e5a;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.faction-tracker [data-tooltip]:hover::before,
+.edit-bag-dialog [data-tooltip]:hover::before,
+.edit-character-dialog [data-tooltip]:hover::before,
+.archive-dialog [data-tooltip]:hover::before,
+.announcements-dialog [data-tooltip]:hover::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: #b48e5a;
+  z-index: 10001;
+  pointer-events: none;
+  margin-top: 2px;
 }
