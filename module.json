@@ -13,7 +13,7 @@
   "license": "MIT",
   "readme": "README.md",
   "socket": true,
-  "url": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.2.0/bag-o-lists.zip",
+  "url": "https://github.com/Luna-the-Turtle/Bag-o-Lists",
   "manifest": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.2.0/module.json",
   "download": "https://github.com/Luna-the-Turtle/Bag-o-Lists/releases/download/1.2.0/bag-o-lists.zip",
   "relationships": {
